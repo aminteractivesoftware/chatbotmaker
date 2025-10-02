@@ -1,0 +1,41 @@
+header {
+  text-align: center;
+  margin-bottom: 40px;
+  padding: 40px 0;
+}
+
+header h1 {
+  font-size: 3rem;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, var(--primary-orange) 0%, #D15520 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+header p {
+  color: var(--secondary-text);
+  font-size: 1.2rem;
+}
+
+.mode-selector {
+  text-align: center;
+}
+
+.mode-selector button.active {
+  box-shadow: 0 0 20px rgba(230, 97, 40, 0.4);
+  transform: scale(1.02);
+}
+
+small {
+  color: var(--secondary-text);
+}
+
+small a {
+  color: var(--primary-orange);
+  text-decoration: none;
+}
+
+small a:hover {
+  text-decoration: underline;
+}
