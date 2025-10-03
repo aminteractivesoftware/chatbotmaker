@@ -90,7 +90,21 @@ function getRoleLabel(role) {
 export function generateCharacterCards(characters, coverImageBase64 = null) {
   const cards = [];
   
-  characters.forEach(char => {
+  // Sort characters to ensure main/protagonist characters come first for persona generation
+  const sortedCharacters = [...characters].sort((a, b) => {
+    const roleOrder = {
+      'main_character': 0,
+      'protagonist': 1,
+      'love_interest': 2,
+      'antagonist': 3,
+      'supporting': 4,
+      'mentor': 5,
+      'rival': 6
+    };
+    return (roleOrder[a.role] || 99) - (roleOrder[b.role] || 99);
+  });
+  
+  sortedCharacters.forEach((char, index) => {
     // Build tag array from AI tags plus role
     const tags = [
       ...(char.tags || []),
@@ -100,8 +114,22 @@ export function generateCharacterCards(characters, coverImageBase64 = null) {
     // Remove duplicates and convert to lowercase
     const uniqueTags = [...new Set(tags.map(t => t.toLowerCase()))];
     
+    // Get first messages - check multiple possible formats
+    let firstMessages = [];
+    if (Array.isArray(char.firstMessages) && char.firstMessages.length > 0) {
+      firstMessages = char.firstMessages.filter(msg => msg && msg.trim());
+    } else if (char.firstMessage) {
+      firstMessages = [char.firstMessage];
+    }
+    
+    // Fallback if no first messages found
+    if (firstMessages.length === 0) {
+      firstMessages = [`*${char.name} appears before you.*`];
+    }
+    
+    console.log(`Character ${char.name}: Found ${firstMessages.length} first messages`);
+    
     // Generate regular character card (for interacting WITH the character)
-    const firstMessages = char.firstMessages || [char.firstMessage] || [`*${char.name} appears before you.*`];
     const regularCard = {
       spec: 'chara_card_v2',
       spec_version: '2.0',
@@ -135,8 +163,11 @@ export function generateCharacterCards(characters, coverImageBase64 = null) {
     
     cards.push(regularCard);
     
-    // If character can be a persona, generate persona version
-    if (char.canBePersona) {
+    // Only generate persona for top 2 characters that can be personas
+    const shouldGeneratePersona = char.canBePersona && index < 2;
+    
+    if (shouldGeneratePersona) {
+      console.log(`Generating persona card for ${char.name} (rank ${index + 1})`);
       const personaCard = {
         spec: 'chara_card_v2',
         spec_version: '2.0',

@@ -297,7 +297,7 @@ function Results({ data }) {
             <div key={idx} className="lorebook-entry">
               <strong>{entry.name}</strong>
               <p className="entry-keys">Keys: {entry.keys.join(', ')}</p>
-              <p>{entry.content.substring(0, 150)}...</p>
+              <p>{entry.content ? entry.content.substring(0, 150) : 'No content available'}...</p>
             </div>
           ))}
           {data.lorebook.entries.length > 10 && (

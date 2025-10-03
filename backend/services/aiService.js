@@ -142,7 +142,10 @@ export async function analyzeBook(bookText, apiKey, model = 'anthropic/claude-3.
     }
   }
 
-  const prompt = `Analyze this book text and extract detailed information about the characters and world. Respond with ONLY valid JSON.
+  const prompt = `Analyze this book text and extract detailed information about the characters and world. 
+
+CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks. Just raw JSON starting with { and ending with }.
+Ensure all quotes inside strings are properly escaped with backslashes.
 
 Book Text:
 ${textToAnalyze}
@@ -158,11 +161,11 @@ Return a JSON object with this structure:
       "physicalDescription": "1 paragraph: height, build, age, hair, eyes, distinctive features, clothing",
       "personality": "1-2 paragraphs: core traits, quirks, motivations, values, strengths, weaknesses",
       "commonPhrases": ["3-5 distinctive phrases or expressions they use"],
-      "scenario": "Scenario when meeting {{user}}. Replace interaction partner name with {{user}}",
+      "scenario": "Describe the scenario of when this character first meets {{user}} (1 paragraph). Set the scene with key details: setting, circumstances, mood, what brings them together. Use {{user}} instead of the other character's actual name.",
       "firstMessages": [
-        "Opening message 1. Use quotes for dialogue and asterisks for actions",
-        "Opening message 2 with different tone",
-        "Opening message 3"
+        "First message option 1 - Opening message when meeting {{user}}. 1-3 paragraphs. Start with backstory/context: what led to this moment, their emotional state, recent events. Then describe the scene with sensory details. Finally, their greeting or first action. Use quotes for dialogue and asterisks for actions/thoughts. Make it immersive and in-character.",
+        "First message option 2 - Different opening showing another personality aspect. 1-3 paragraphs with context, scene-setting, and interaction. Use quotes for dialogue and asterisks for actions/thoughts.",
+        "First message option 3 - Another variation (emotional, action-packed, humorous, or intimate). 1-3 paragraphs with comprehensive backstory and scene details. Use quotes for dialogue and asterisks for actions/thoughts."
       ],
       "exampleDialogue": "4-6 short exchanges. Use {{user}} for other person. Use quotes for speech, asterisks for actions",
       "tags": ["5-15 tags: gender, genre, personality, role"],
@@ -294,8 +297,48 @@ Instructions:
       updateProgress(sessionId, `Received response (${content.length.toLocaleString()} characters), parsing...`);
     }
     
-    const analysis = JSON.parse(content);
-    console.log('Successfully parsed JSON response');
+    // Try to parse JSON, with repair attempt if it fails
+    let analysis;
+    try {
+      analysis = JSON.parse(content);
+      console.log('Successfully parsed JSON response');
+    } catch (parseError) {
+      console.error('Initial JSON parse failed:', parseError.message);
+      console.log('Attempting to repair JSON...');
+      
+      // Try to extract just the JSON object if there's extra text
+      let cleanedContent = content.trim();
+      
+      // Remove markdown code blocks if present
+      cleanedContent = cleanedContent.replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
+      
+      // Find the first { and last }
+      const firstBrace = cleanedContent.indexOf('{');
+      const lastBrace = cleanedContent.lastIndexOf('}');
+      
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleanedContent = cleanedContent.substring(firstBrace, lastBrace + 1);
+      }
+      
+      // Try to fix common JSON issues
+      // Fix unescaped quotes in strings (basic attempt)
+      cleanedContent = cleanedContent
+        .replace(/([^\\])"([^",:}\]]*)"([^,:}\]]*?):/g, '$1\\"$2\\"$3:') // Fix unescaped quotes in property names
+        .replace(/:\s*"([^"]*)"/g, (match, p1) => {
+          // Fix unescaped quotes in string values
+          const fixed = p1.replace(/(?<!\\)"/g, '\\"');
+          return `: "${fixed}"`;
+        });
+      
+      try {
+        analysis = JSON.parse(cleanedContent);
+        console.log('Successfully parsed JSON after repair');
+      } catch (repairError) {
+        console.error('JSON repair failed:', repairError.message);
+        console.error('Problematic JSON section:', cleanedContent.substring(Math.max(0, parseError.message.match(/position (\d+)/)?.[1] - 100 || 0), Math.min(cleanedContent.length, (parseError.message.match(/position (\d+)/)?.[1] || 0) + 100)));
+        throw new Error(`Failed to parse AI response: ${parseError.message}`);
+      }
+    }
 
     // Validate the response structure
     if (!analysis.characters || !Array.isArray(analysis.characters)) {
