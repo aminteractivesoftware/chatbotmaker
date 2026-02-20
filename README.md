@@ -17,14 +17,16 @@ AI-powered tool to generate character cards and lorebooks from book files or sum
 - Node.js 18+ installed
 - OpenRouter API key (get one at [openrouter.ai](https://openrouter.ai))
 
-### Installation
+### Clone and Run (Dev)
 
-1. Install dependencies:
+1. Clone and install:
 ```bash
-npm run install:all
+git clone <your-repo-url>
+cd chatbot-maker
+npm install
 ```
 
-2. Start the development servers:
+2. Start both servers:
 ```bash
 npm run dev
 ```
@@ -33,9 +35,24 @@ This will start:
 - Backend API on `http://localhost:3001`
 - Frontend on `http://localhost:3000`
 
+### Clone and Run (Single Process)
+
+1. Build frontend:
+```bash
+npm run build
+```
+
+2. Start backend (serves API + frontend build):
+```bash
+npm start
+```
+
+3. Open:
+- `http://localhost:3001`
+
 ## Usage
 
-1. Open `http://localhost:3000` in your browser
+1. Open `http://localhost:3000` (dev) or `http://localhost:3001` (single process)
 2. Enter your OpenRouter API key
 3. Choose to either:
    - Upload an EPUB file, OR

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import processRouter from './routes/process.js';
 import exportRouter from './routes/export.js';
@@ -11,6 +12,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const frontendDistPath = path.resolve(__dirname, '../frontend/dist');
 
 // Middleware
 app.use(cors());
@@ -40,7 +42,6 @@ const upload = multer({
 });
 
 // Create uploads directory
-import fs from 'fs';
 if (!fs.existsSync('uploads')) {
   fs.mkdirSync('uploads');
 }
@@ -53,6 +54,17 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// In production, serve the frontend build from the backend process.
+if (fs.existsSync(frontendDistPath)) {
+  app.use(express.static(frontendDistPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
+  });
+}
+
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  const modeMessage = fs.existsSync(frontendDistPath)
+    ? 'with frontend build'
+    : 'API-only mode (frontend build not found)';
+  console.log(`Server running on port ${PORT} (${modeMessage})`);
 });
