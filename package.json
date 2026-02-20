@@ -60,7 +60,12 @@
           ]
         }
       ],
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "extendInfo": {
+        "NSDocumentsFolderUsageDescription": "Chatbot Maker needs access to open EPUB files you select.",
+        "NSDownloadsFolderUsageDescription": "Chatbot Maker needs access to open EPUB files you select.",
+        "NSDesktopFolderUsageDescription": "Chatbot Maker needs access to open EPUB files you select."
+      }
     },
     "dmg": {
       "iconSize": 100,
