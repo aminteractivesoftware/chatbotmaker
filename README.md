@@ -1,6 +1,6 @@
 # Chatbot Maker
 
-AI-powered desktop app to generate SillyTavern character cards and lorebooks from public domain books and text summaries.
+AI-powered desktop app to generate chatbot character cards and lorebooks from public domain books and text summaries.
 
 ## Features
 
@@ -9,7 +9,7 @@ AI-powered desktop app to generate SillyTavern character cards and lorebooks fro
 - AI-powered character extraction using any OpenAI-compatible provider
 - Generates detailed character cards with personality, dialogue, and tags
 - Creates lorebooks with world information
-- Exports as JSON and PNG (SillyTavern v2 spec)
+- Exports as JSON and PNG (character card v2 spec)
 - Chapter-aware chunking for large books
 
 ## Download

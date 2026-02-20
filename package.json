@@ -1,7 +1,7 @@
 {
   "name": "chatbot-maker",
   "version": "1.0.0",
-  "description": "AI-powered SillyTavern character and lorebook generator",
+  "description": "AI-powered chatbot character card and lorebook generator",
   "private": true,
   "main": "electron/main.mjs",
   "workspaces": [

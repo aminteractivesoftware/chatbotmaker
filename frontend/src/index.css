@@ -3,6 +3,7 @@
   --primary-orange: #E66128;
   --sepia-dark: #3C2D28;
   --secondary-text: #A89B8C;
+  --success-color: #28a745;
   --error-color: #dc3545;
   --bg-dark: #171717;
   --surface-dark: #1F1F1F;
@@ -120,7 +121,7 @@ textarea {
 }
 
 .success {
-  background: var(--primary-orange);
+  background: var(--success-color);
   color: var(--text-light);
   padding: 15px;
   border-radius: 8px;

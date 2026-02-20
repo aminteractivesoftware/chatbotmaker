@@ -164,9 +164,17 @@ async function chunkAndSummarize(bookText, chapters, maxCharsForInput, safeConte
 
   let combined = summaries.join('\n\n---\n\n');
 
-  if (combined.length > maxCharsForInput) {
-    logger.info('Combined summary still too large, creating final summary...');
+  const maxReduceAttempts = 3;
+  let reduceAttempt = 0;
+  while (combined.length > maxCharsForInput && reduceAttempt < maxReduceAttempts) {
+    reduceAttempt += 1;
+    logger.info(`Combined summary too large (${combined.length} chars), reduction attempt ${reduceAttempt}/${maxReduceAttempts}...`);
     combined = await summarizeChunk(combined, apiKey, model, apiBaseUrl);
+  }
+
+  if (combined.length > maxCharsForInput) {
+    logger.warn(`Combined summary still exceeds max input (${combined.length} > ${maxCharsForInput}) after ${maxReduceAttempts} attempts; truncating safely.`);
+    combined = `${combined.slice(0, maxCharsForInput - 1)}…`;
   }
 
   return combined;
@@ -203,10 +211,16 @@ async function requestAnalysis(textToAnalyze, apiKey, model, apiBaseUrl) {
  * Attempt to parse JSON from AI response, with repair logic for common issues.
  */
 function parseAIResponse(content) {
-  // Try direct parse first
-  try { return JSON.parse(content); } catch { /* fall through to repair */ }
+  let initialParseError = null;
 
-  logger.debug('Direct JSON parse failed, attempting repair...');
+  // Try direct parse first
+  try {
+    return JSON.parse(content);
+  } catch (err) {
+    initialParseError = err;
+  }
+
+  logger.debug(`Direct JSON parse failed, attempting repair: ${initialParseError?.message || 'Unknown parse error'}`);
   let cleaned = content.trim();
 
   // Strip markdown code fences
@@ -220,7 +234,9 @@ function parseAIResponse(content) {
   }
 
   try { return JSON.parse(cleaned); } catch (err) {
-    throw new Error(`Failed to parse AI response: ${err.message}`);
+    throw new Error(
+      `Failed to parse AI response after repair attempt: ${err.message}. Initial parse error: ${initialParseError?.message || 'Unknown parse error'}`,
+    );
   }
 }
 

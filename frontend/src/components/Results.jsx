@@ -5,6 +5,7 @@ import './Results.css'
 function Results({ data }) {
   const [selectedChar, setSelectedChar] = useState(null)
   const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState('')
 
   if (!data) {
     return (
@@ -46,6 +47,7 @@ function Results({ data }) {
   const downloadCharacterPNG = async (char) => {
     try {
       setDownloading(true)
+      setDownloadError('')
       const response = await axios.post('/api/export/character/png', {
         characterData: char,
         coverImage: data.coverImage
@@ -56,11 +58,33 @@ function Results({ data }) {
       const url = URL.createObjectURL(response.data)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${char.data.name.replace(/[^a-z0-9]/gi, '_')}.png`
+      const safeName = char?.data?.name || 'character'
+      a.download = `${safeName.replace(/[^a-z0-9]/gi, '_')}.png`
       a.click()
       URL.revokeObjectURL(url)
     } catch (error) {
-      // Silently handle — user sees the button re-enable
+      let detail = error?.message || 'Unknown error'
+      const responseData = error?.response?.data
+
+      if (responseData instanceof Blob) {
+        try {
+          const text = await responseData.text()
+          if (text) {
+            try {
+              const parsed = JSON.parse(text)
+              detail = parsed?.error || parsed?.message || text
+            } catch {
+              detail = text
+            }
+          }
+        } catch {
+          // Fall back to default detail when blob text cannot be read.
+        }
+      } else if (responseData?.error || responseData?.message) {
+        detail = responseData.error || responseData.message
+      }
+
+      setDownloadError(`Failed to download PNG for ${char?.data?.name || 'character'}: ${detail}`)
     } finally {
       setDownloading(false)
     }
@@ -88,6 +112,11 @@ function Results({ data }) {
       <div className="success">
         Successfully generated {data.characters.length} character card(s) and lorebook!
       </div>
+      {downloadError && (
+        <div className="error">
+          {downloadError}
+        </div>
+      )}
 
       <div className="card">
         <h2>{data.bookTitle || 'Your Book'}</h2>
@@ -123,12 +152,14 @@ function Results({ data }) {
       <div className="card">
         <h3>Characters ({data.characters.length})</h3>
         <div className="character-grid">
-          {data.characters.map((char, idx) => (
-            <div
-              key={idx}
-              className="character-card"
-              onClick={() => setSelectedChar(selectedChar === idx ? null : idx)}
-            >
+          {data.characters.map((char) => {
+            const charId = char.id || `${char.data?.name || 'character'}::${char.data?.character_version || (char.isPersona ? 'persona' : 'main')}`
+            return (
+              <div
+                key={charId}
+                className="character-card"
+                onClick={() => setSelectedChar(selectedChar === charId ? null : charId)}
+              >
               <div className="char-header">
                 <h4>{char.data.name}</h4>
                 <span className={`role-badge ${char.isPersona ? 'role-badge-persona' : ''}`}>
@@ -178,7 +209,7 @@ function Results({ data }) {
                   PNG
                 </button>
               </div>
-              {selectedChar === idx && (
+              {selectedChar === charId && (
                 <div className="char-details">
                   <div className="detail-section">
                     <strong>Type:</strong>
@@ -212,8 +243,9 @@ function Results({ data }) {
                   </div>
                 </div>
               )}
-            </div>
-          ))}
+              </div>
+            )
+          })}
         </div>
       </div>
 

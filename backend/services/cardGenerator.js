@@ -1,8 +1,8 @@
 import logger from '../utils/logger.js';
 
 /**
- * Format example dialogue with proper <START> delimiters for SillyTavern.
- * SillyTavern expects exchanges separated by <START> markers.
+ * Format example dialogue with proper <START> delimiters.
+ * Expects exchanges separated by <START> markers.
  * @param {string} rawDialogue - Raw example dialogue from AI
  * @returns {string} Formatted dialogue with <START> markers
  */
@@ -35,47 +35,28 @@ function formatExampleDialogue(rawDialogue) {
  * (scenario, first_mes, alternate_greetings, mes_example) and should NOT be
  * duplicated here.
  * @param {Object} char - Character data from AI analysis
- * @param {boolean} isPersona - Whether this is being generated as a persona
  * @returns {string} Formatted description
  */
-function formatCharacterDescription(char, isPersona = false) {
-  let description = '';
+function formatCharacterDescription(char) {
+  const parts = [];
 
-  if (isPersona) {
-    // Persona card — written so the user can roleplay AS this character
-    description += `{{char}} is ${char.name}.\n\n`;
+  const header = `{{char}} is ${char.name}.`;
+  parts.push(header);
 
-    if (char.background) {
-      description += `${char.background}\n\n`;
-    }
-    if (char.physicalDescription) {
-      description += `{{char}}'s appearance: ${char.physicalDescription}\n\n`;
-    }
-    if (char.personality) {
-      description += `{{char}}'s personality: ${char.personality}\n\n`;
-    }
-    if (char.commonPhrases && char.commonPhrases.length > 0) {
-      description += `{{char}} often says things like:\n${char.commonPhrases.map(p => `- "${p}"`).join('\n')}\n`;
-    }
-  } else {
-    // Regular card — third-person definition for the AI to embody
-    description += `{{char}} is ${char.name}.\n\n`;
-
-    if (char.background) {
-      description += `${char.background}\n\n`;
-    }
-    if (char.physicalDescription) {
-      description += `{{char}}'s appearance: ${char.physicalDescription}\n\n`;
-    }
-    if (char.personality) {
-      description += `{{char}}'s personality: ${char.personality}\n\n`;
-    }
-    if (char.commonPhrases && char.commonPhrases.length > 0) {
-      description += `{{char}} often says things like:\n${char.commonPhrases.map(p => `- "${p}"`).join('\n')}\n`;
-    }
+  if (char.background) {
+    parts.push(char.background);
+  }
+  if (char.physicalDescription) {
+    parts.push(`{{char}}'s appearance: ${char.physicalDescription}`);
+  }
+  if (char.personality) {
+    parts.push(`{{char}}'s personality: ${char.personality}`);
+  }
+  if (char.commonPhrases && char.commonPhrases.length > 0) {
+    parts.push(`{{char}} often says things like:\n${char.commonPhrases.map(p => `- "${p}"`).join('\n')}`);
   }
 
-  return description.trim();
+  return parts.join('\n\n').trim();
 }
 
 /**
@@ -97,7 +78,7 @@ function getRoleLabel(role) {
   return roleLabels[role] || 'Character';
 }
 
-// Talkativeness by role — controls auto-response frequency in SillyTavern (0.0–1.0)
+// Talkativeness by role — controls auto-response frequency (0.0–1.0)
 const ROLE_TALKATIVENESS = {
   'main_character': 0.8,
   'protagonist': 0.8,
@@ -167,7 +148,7 @@ export function generateCharacterCards(characters, coverImageBase64 = null) {
       spec_version: '2.0',
       data: {
         name: char.name,
-        description: formatCharacterDescription(char, false),
+        description: formatCharacterDescription(char),
         personality: char.personality || '',
         scenario: char.scenario || '',
         first_mes: firstMessages[0] || `*${char.name} appears before you.*`,
@@ -206,7 +187,7 @@ export function generateCharacterCards(characters, coverImageBase64 = null) {
         spec_version: '2.0',
         data: {
           name: `${char.name} (Persona)`,
-          description: formatCharacterDescription(char, true),
+          description: formatCharacterDescription(char),
           personality: char.personality || '',
           scenario: char.scenario ? char.scenario.replace(/\{\{user\}\}/g, char.name) : '',
           first_mes: firstMessages[0] || `*You are ${char.name}. The story begins.*`,
@@ -285,7 +266,6 @@ function generateSecondaryKeys(description, category) {
 
   // For items and concepts, extract a contextual secondary key from the description
   if (category === 'item' || category === 'concept') {
-    const words = description.split(/\s+/).filter(w => w.length >= 5);
     // Pick up to 2 meaningful words from the first sentence
     const firstSentence = description.split(/[.!?]/)[0] || '';
     const candidates = firstSentence
@@ -321,6 +301,7 @@ export function generateLorebook(worldInfo) {
     const config = CATEGORY_CONFIG[category] || CATEGORY_CONFIG.concept;
     const keys = generateKeys(name, extraKeywords);
     const secondaryKeys = generateSecondaryKeys(description, category);
+    const assignedDisplayIndex = displayIndex++;
 
     // Format content with category context so the AI knows what this entry is
     const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);
@@ -341,7 +322,7 @@ export function generateLorebook(worldInfo) {
       addMemo: true,
       excludeRecursion: false,
       probability: 100,
-      displayIndex: displayIndex++,
+      displayIndex: assignedDisplayIndex,
       useProbability: true,
       secondary_keys: secondaryKeys,
       keys: keys,
@@ -354,7 +335,7 @@ export function generateLorebook(worldInfo) {
         depth: config.depth,
         weight: config.weight,
         addMemo: true,
-        displayIndex: displayIndex - 1,
+        displayIndex: assignedDisplayIndex,
         useProbability: true,
         characterFilter: null,
         excludeRecursion: false

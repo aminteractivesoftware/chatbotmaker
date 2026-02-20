@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
 import FileUpload from './components/FileUpload'
 import TextSummary from './components/TextSummary'
@@ -12,6 +12,7 @@ import './App.css'
 const MODEL_FETCH_DEBOUNCE_MS = 500
 const CONFIG_SAVED_FLASH_MS = 2000
 const TEST_STATUS_FLASH_MS = 5000
+const FETCH_ERROR_FLASH_MS = 5000
 const REQUEST_TIMEOUT_MS = 300000
 const DEFAULT_CONTEXT_LENGTH = 200000
 
@@ -32,6 +33,8 @@ function App() {
   const [mode, setMode] = useState('file')
   const [progressMessage, setProgressMessage] = useState('')
   const [testStatus, setTestStatus] = useState(null)
+  const [fetchError, setFetchError] = useState('')
+  const fetchErrorTimeoutRef = useRef(null)
 
   const onProgressMessage = useCallback((msg) => setProgressMessage(msg), [])
   const { start: startPolling, stop: stopPolling } = useProgressPolling(onProgressMessage)
@@ -69,7 +72,12 @@ function App() {
   useEffect(() => {
     const fetchModels = async () => {
       if (!apiKey.trim() || !apiBaseUrl.trim()) {
+        if (fetchErrorTimeoutRef.current) {
+          clearTimeout(fetchErrorTimeoutRef.current)
+          fetchErrorTimeoutRef.current = null
+        }
         setModels([])
+        setFetchError('')
         return
       }
 
@@ -89,11 +97,25 @@ function App() {
           return (b.context_length || 0) - (a.context_length || 0)
         })
         setModels(sortedModels)
+        if (fetchErrorTimeoutRef.current) {
+          clearTimeout(fetchErrorTimeoutRef.current)
+          fetchErrorTimeoutRef.current = null
+        }
+        setFetchError('')
 
         const firstFree = sortedModels.find(isModelFree)
         if (firstFree) setSelectedModel(firstFree.id)
-      } catch {
+      } catch (err) {
+        console.warn('Failed to fetch models', err)
         setModels([])
+        setFetchError('Failed to fetch models. Check your provider URL/API key and try again.')
+        if (fetchErrorTimeoutRef.current) {
+          clearTimeout(fetchErrorTimeoutRef.current)
+        }
+        fetchErrorTimeoutRef.current = setTimeout(() => {
+          setFetchError('')
+          fetchErrorTimeoutRef.current = null
+        }, FETCH_ERROR_FLASH_MS)
       } finally {
         setLoadingModels(false)
       }
@@ -102,6 +124,14 @@ function App() {
     const debounce = setTimeout(fetchModels, MODEL_FETCH_DEBOUNCE_MS)
     return () => clearTimeout(debounce)
   }, [apiKey, apiBaseUrl])
+
+  useEffect(() => {
+    return () => {
+      if (fetchErrorTimeoutRef.current) {
+        clearTimeout(fetchErrorTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const handleProcess = async (formData) => {
     if (!apiKey.trim()) {
@@ -225,6 +255,7 @@ function App() {
 
         <div>
           <label className="form-label">Model</label>
+          {fetchError && <div className="status-message error">{fetchError}</div>}
 
           {loadingModels ? (
             <div className="placeholder-box">Loading models...</div>

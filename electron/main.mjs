@@ -9,6 +9,7 @@ const isDev = !app.isPackaged;
 
 let mainWindow = null;
 let serverInstance = null;
+const SERVER_CLOSE_TIMEOUT_MS = 5000;
 
 function getUserDataPath(...segments) {
   return path.join(app.getPath('userData'), ...segments);
@@ -86,10 +87,30 @@ async function main() {
   });
 }
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
   if (serverInstance) {
-    serverInstance.close();
+    try {
+      await Promise.race([
+        new Promise((resolve, reject) => {
+          serverInstance.close((err) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            resolve();
+          });
+        }),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timed out while closing embedded server')), SERVER_CLOSE_TIMEOUT_MS);
+        }),
+      ]);
+    } catch (err) {
+      console.error('Error during embedded server shutdown:', err);
+    } finally {
+      serverInstance = null;
+    }
   }
+
   app.quit();
 });
 

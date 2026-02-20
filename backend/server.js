@@ -48,7 +48,10 @@ export function startServer(options = {}) {
   // Serve frontend static files if they exist
   if (fs.existsSync(frontendDistPath)) {
     app.use(express.static(frontendDistPath));
-    app.get('*', (req, res) => {
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
       res.sendFile(path.join(frontendDistPath, 'index.html'));
     });
   }

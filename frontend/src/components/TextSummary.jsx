@@ -26,7 +26,7 @@ function TextSummary({ onSubmit }) {
       setUseCoverFromWeb(false)
     } else {
       setUrlError('')
-      if (url && isValidUrl(url)) setUseCoverFromWeb(true)
+      if (url) setUseCoverFromWeb(true)
     }
   }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import './FileUpload.css'
 
@@ -10,23 +10,44 @@ function FileUpload({ onUpload, contextLength }) {
   const [preview, setPreview] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState('')
+  const controllerRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort()
+    }
+  }, [])
 
   const fetchPreview = async (selectedFile) => {
+    if (controllerRef.current) {
+      controllerRef.current.abort()
+      controllerRef.current = null
+    }
+
+    const controller = new AbortController()
+    controllerRef.current = controller
+
     setPreviewLoading(true)
     setPreviewError('')
     setPreview(null)
+
     try {
       const formData = new FormData()
       formData.append('file', selectedFile)
       formData.append('contextLength', contextLength || 200000)
       const res = await axios.post('/api/process/preview', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        signal: controller.signal
       })
       setPreview(res.data)
     } catch (err) {
+      if (err.code === 'ERR_CANCELED' || err.name === 'CanceledError') return
       setPreviewError(err.response?.data?.error || 'Failed to analyze file')
     } finally {
-      setPreviewLoading(false)
+      if (controllerRef.current === controller) {
+        controllerRef.current = null
+        setPreviewLoading(false)
+      }
     }
   }
 

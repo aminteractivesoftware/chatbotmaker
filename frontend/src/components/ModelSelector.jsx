@@ -146,26 +146,29 @@ function ModelSelector({ models, selectedModel, onSelectModel, disabled }) {
 
           <div className="model-selector-list">
             {filteredModels.length > 0 ? (
-              filteredModels.map(model => (
-                <div
-                  key={model.id}
-                  className={`model-selector-item ${model.id === selectedModel ? 'selected' : ''}`}
-                  onClick={() => handleSelect(model.id)}
-                >
-                  <div className="model-name">
-                    {model.name || model.id}
-                    {isModelFree(model) && <span className="free-badge">🆓</span>}
+              filteredModels.map(model => {
+                const price = formatPrice(model)
+                return (
+                  <div
+                    key={model.id}
+                    className={`model-selector-item ${model.id === selectedModel ? 'selected' : ''}`}
+                    onClick={() => handleSelect(model.id)}
+                  >
+                    <div className="model-name">
+                      {model.name || model.id}
+                      {isModelFree(model) && <span className="free-badge">🆓</span>}
+                    </div>
+                    <div className="model-meta">
+                      <span className="model-context-small">
+                        {(model.context_length / 1000).toFixed(0)}K tokens
+                      </span>
+                      {price && (
+                        <span className="model-price">{price}</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="model-meta">
-                    <span className="model-context-small">
-                      {(model.context_length / 1000).toFixed(0)}K tokens
-                    </span>
-                    {formatPrice(model) && (
-                      <span className="model-price">{formatPrice(model)}</span>
-                    )}
-                  </div>
-                </div>
-              ))
+                )
+              })
             ) : (
               <div className="model-selector-empty">
                 No models match your filters
