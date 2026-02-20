@@ -51,7 +51,6 @@
     ],
     "mac": {
       "category": "public.app-category.utilities",
-      "identity": null,
       "target": [
         {
           "target": "dmg",

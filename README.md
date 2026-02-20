@@ -14,15 +14,13 @@ AI-powered desktop app to generate chatbot character cards and lorebooks from pu
 
 ## Download
 
-Download the latest release for your platform from [GitHub Releases](../../releases).
-
-- **macOS:** `Chatbot Maker.dmg`
-- **Windows:** `Chatbot Maker Setup.exe`
+- **Windows:** Download `Chatbot Maker Setup.exe` from [GitHub Releases](../../releases)
+- **macOS / Linux:** Run from source (see [Development Setup](#development-setup) below)
 
 ## Quick Start
 
-1. Download and install the app for your platform
-2. Launch Chatbot Maker
+1. **Windows:** Download and install the app, then launch it
+2. **macOS / Linux:** Clone the repo, run `npm install`, then `npm run dev`
 3. Enter your API key and provider URL (defaults to OpenRouter)
 4. Upload an EPUB file or paste a book summary
 5. Click "Process" and wait for AI analysis
@@ -80,31 +78,13 @@ npm start
 
 Opens at `http://localhost:3001` — backend serves both API and the built frontend.
 
-## Building the Desktop App
-
-### macOS
-
-```bash
-npm run electron:build:mac
-```
-
-Produces `dist-electron/Chatbot Maker.dmg` (universal binary for Intel and Apple Silicon).
-
-### Windows
+## Building the Desktop App (Windows)
 
 ```bash
 npm run electron:build:win
 ```
 
 Produces `dist-electron/Chatbot Maker Setup.exe` (NSIS installer).
-
-### Unpacked Build (Testing)
-
-```bash
-npm run electron:build:dir
-```
-
-Produces an unpacked app in `dist-electron/` for quick testing without creating an installer.
 
 ## Project Structure
 
