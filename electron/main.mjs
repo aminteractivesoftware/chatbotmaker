@@ -75,9 +75,13 @@ async function main() {
 
   await createWindow(actualPort);
 
-  app.on('activate', () => {
+  app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow(actualPort);
+      try {
+        await createWindow(actualPort);
+      } catch (err) {
+        console.error('Failed to recreate application window:', err);
+      }
     }
   });
 }

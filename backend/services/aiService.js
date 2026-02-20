@@ -134,7 +134,10 @@ async function summarizeChunk(chunk, apiKey, model, apiBaseUrl) {
         content: `Summarize this excerpt from a book, focusing on characters, plot events, world-building details, and key information:\n\n${chunk}`,
       }],
     },
-    { headers: makeHeaders(apiKey) },
+    {
+      headers: makeHeaders(apiKey),
+      timeout: AI_REQUEST_TIMEOUT_MS,
+    },
   );
   return response.data.choices[0].message.content;
 }

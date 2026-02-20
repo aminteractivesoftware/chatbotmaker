@@ -32,8 +32,46 @@ function validateFileExtension(filename) {
 
 async function cleanupFiles(...filePaths) {
   for (const p of filePaths) {
-    if (p) await fs.unlink(p).catch(() => {});
+    if (!p) continue;
+    try {
+      await fs.unlink(p);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        logger.error(`Failed to delete uploaded file ${p}:`, error.message);
+      }
+    }
   }
+}
+
+function getUploadedPaths(req) {
+  const paths = [];
+
+  if (req?.file?.path) paths.push(req.file.path);
+
+  if (!req?.files) return paths;
+
+  if (Array.isArray(req.files)) {
+    for (const f of req.files) {
+      if (f?.path) paths.push(f.path);
+    }
+    return paths;
+  }
+
+  for (const entry of Object.values(req.files)) {
+    if (Array.isArray(entry)) {
+      for (const f of entry) {
+        if (f?.path) paths.push(f.path);
+      }
+    } else if (entry?.path) {
+      paths.push(entry.path);
+    }
+  }
+
+  return paths;
+}
+
+async function cleanupRequestUploads(req) {
+  await cleanupFiles(...getUploadedPaths(req));
 }
 
 function generateSessionId() {
@@ -168,11 +206,20 @@ export function createProcessRouter(uploadsPath) {
       const file = req.files?.file?.[0];
       const coverImage = req.files?.coverImage?.[0];
 
-      if (!file) return res.status(400).json({ error: 'No file uploaded' });
-      if (!apiKey) return res.status(400).json({ error: 'API key is required' });
+      if (!file) {
+        await cleanupRequestUploads(req);
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+      if (!apiKey) {
+        await cleanupRequestUploads(req);
+        return res.status(400).json({ error: 'API key is required' });
+      }
 
       const extError = validateFileExtension(file.originalname);
-      if (extError) return res.status(400).json({ error: extError });
+      if (extError) {
+        await cleanupRequestUploads(req);
+        return res.status(400).json({ error: extError });
+      }
 
       logger.info(`Processing: ${file.originalname}, model: ${model}`);
 
@@ -227,6 +274,7 @@ export function createProcessRouter(uploadsPath) {
         sessionId,
       });
     } catch (error) {
+      await cleanupRequestUploads(req);
       logger.error('Error processing file:', error.message);
       clearProgress(sessionId);
       res.status(500).json({ error: error.message || 'An error occurred during processing' });
@@ -264,6 +312,7 @@ export function createProcessRouter(uploadsPath) {
         coverImage: coverImageBase64,
       });
     } catch (error) {
+      await cleanupFiles(req.file?.path);
       logger.error('Error processing summary:', error.message);
       res.status(500).json({ error: error.message });
     }

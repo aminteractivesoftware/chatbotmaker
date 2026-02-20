@@ -69,6 +69,7 @@ npm run electron:dev
 ```
 
 This starts both servers and opens the app in an Electron window with DevTools.
+`electron:dev` waits up to 60 seconds for the frontend URL before failing so startup issues surface quickly in local dev and CI.
 
 ### Run as Single Process (Web)
 

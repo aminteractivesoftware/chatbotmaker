@@ -6,9 +6,10 @@
  */
 export function isModelFree(model) {
   if (!model) return false;
+  const hasFreeMarker = model.id?.includes(':free') || model.id?.includes('free');
   const p = model.pricing;
-  if (!p) return model.id?.includes(':free') || model.id?.includes('free');
+  if (!p) return hasFreeMarker;
   const promptFree = p.prompt === '0' || p.prompt === 0;
   const completionFree = p.completion === '0' || p.completion === 0;
-  return (promptFree && completionFree) || model.id?.includes(':free');
+  return (promptFree && completionFree) || hasFreeMarker;
 }

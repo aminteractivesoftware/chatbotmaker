@@ -90,7 +90,7 @@ function TextSummary({ onSubmit }) {
         </div>
       </div>
 
-      <button className="primary-btn process-btn" onClick={handleSubmit} disabled={!text.trim()}>
+      <button className="primary-btn process-btn" onClick={handleSubmit} disabled={!text.trim() || !!urlError}>
         Process Summary
       </button>
     </div>

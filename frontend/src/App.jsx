@@ -124,7 +124,7 @@ function App() {
       formData.append('contextLength', contextLength)
 
       const endpoint = mode === 'file' ? '/api/process/file' : '/api/process/summary'
-      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
       formData.append('sessionId', sessionId)
 
       const response = await axios.post(endpoint, formData, {

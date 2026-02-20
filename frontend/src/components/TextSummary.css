@@ -14,11 +14,11 @@
 }
 
 .url-input-error {
-  border-color: #dc3545;
+  border-color: var(--error-color, #dc3545);
 }
 
 .url-error-text {
   display: block;
-  color: #dc3545;
+  color: var(--error-color, #dc3545);
   margin-top: 5px;
 }

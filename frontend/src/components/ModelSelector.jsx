@@ -157,7 +157,7 @@ function ModelSelector({ models, selectedModel, onSelectModel, disabled }) {
                     {isModelFree(model) && <span className="free-badge">🆓</span>}
                   </div>
                   <div className="model-meta">
-                    <span className="model-context">
+                    <span className="model-context-small">
                       {(model.context_length / 1000).toFixed(0)}K tokens
                     </span>
                     {formatPrice(model) && (

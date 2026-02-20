@@ -16,7 +16,7 @@
     "build": "npm --prefix frontend run build",
     "start": "npm --prefix backend run start",
     "start:backend": "npm --prefix backend run start",
-    "electron:dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron:dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"wait-on --timeout 60000 http://localhost:3000 && electron .\"",
     "electron:start": "electron .",
     "electron:build": "npm run build && electron-builder",
     "electron:build:mac": "npm run build && electron-builder --mac",
@@ -51,6 +51,7 @@
     ],
     "mac": {
       "category": "public.app-category.utilities",
+      "identity": null,
       "target": [
         {
           "target": "dmg",
@@ -59,8 +60,6 @@
           ]
         }
       ],
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
       "icon": "build/icon.icns"
     },
     "dmg": {
