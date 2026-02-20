@@ -246,7 +246,16 @@ export function createProcessRouter(uploadsPath) {
       const contextSize = parseInt(contextLength) || DEFAULT_CONTEXT_LENGTH;
       const maxCompTokens = parseInt(maxCompletionTokens) || null;
       const providerUrl = apiBaseUrl || DEFAULT_API_BASE_URL;
-      const analysis = await analyzeBook(bookText, apiKey, model, contextSize, sessionId, updateProgress, providerUrl, epubData.chapters, maxCompTokens);
+      const analysis = await analyzeBook(bookText, {
+        apiKey,
+        model,
+        contextLength: contextSize,
+        sessionId,
+        updateProgress,
+        apiBaseUrl: providerUrl,
+        chapters: epubData.chapters,
+        maxCompletionTokens: maxCompTokens,
+      });
       updateProgress(sessionId, `AI analysis complete - found ${analysis.characters?.length || 0} characters`);
 
       // Generate outputs
@@ -300,7 +309,16 @@ export function createProcessRouter(uploadsPath) {
       const contextSize = parseInt(contextLength) || DEFAULT_CONTEXT_LENGTH;
       const maxCompTokens = parseInt(maxCompletionTokens) || null;
       const providerUrl = apiBaseUrl || DEFAULT_API_BASE_URL;
-      const analysis = await analyzeBook(summary, apiKey, model, contextSize, null, null, providerUrl, null, maxCompTokens);
+      const analysis = await analyzeBook(summary, {
+        apiKey,
+        model,
+        contextLength: contextSize,
+        sessionId: null,
+        updateProgress: null,
+        apiBaseUrl: providerUrl,
+        chapters: null,
+        maxCompletionTokens: maxCompTokens,
+      });
 
       const characterCards = generateCharacterCards(analysis.characters, coverImageBase64);
       const lorebook = generateLorebook(analysis.worldInfo, analysis.characters);

@@ -293,7 +293,7 @@ function repairTruncatedJSON(json) {
     const ch = trimmed[i];
     if (ch === '\\' && inString) { i++; continue; }
     if (ch === '"') { inString = !inString; }
-    if (!inString && (ch === '}' || ch === ']' || ch === '"' || ch === 'e' || ch === 'l')) {
+    if (!inString && (ch === '}' || ch === ']' || ch === '"')) {
       lastGoodPos = i;
     }
   }
@@ -454,8 +454,11 @@ async function fetchCharacterDetail(
 
           try {
             return validateCharacterDetail(parseAIResponse(content), characterSummary.name);
-          } catch {
-            logger.info(`Still cannot parse ${characterSummary.name} after continuation`);
+          } catch (err) {
+            logger.error(
+              `Still cannot parse ${characterSummary.name} after continuation: ${err.message}\n${err.stack || ''}`,
+            );
+            logger.debug(`Raw continuation content for ${characterSummary.name}: ${content}`);
           }
         }
       }
@@ -488,17 +491,31 @@ async function fetchCharacterDetail(
  * Phase 2 fetches full details for each character in parallel.
  *
  * @param {string} bookText - The book text or summary
- * @param {string} apiKey
- * @param {string} model
- * @param {number} contextLength - Model's context window size in tokens
- * @param {string|null} sessionId
- * @param {Function|null} updateProgress
- * @param {string} apiBaseUrl
- * @param {Array|null} chapters - Optional chapter array for chapter-aware chunking
- * @param {number|null} maxCompletionTokens - Model's max output tokens (from provider)
+ * @param {Object} options
+ * @param {string} options.apiKey
+ * @param {string} [options.model='anthropic/claude-3.5-sonnet']
+ * @param {number} [options.contextLength=200000] - Model's context window size in tokens
+ * @param {string|null} [options.sessionId=null]
+ * @param {Function|null} [options.updateProgress=null]
+ * @param {string} [options.apiBaseUrl=DEFAULT_API_BASE_URL]
+ * @param {Array|null} [options.chapters=null] - Optional chapter array for chapter-aware chunking
+ * @param {number|null} [options.maxCompletionTokens=null] - Model's max output tokens (from provider)
  * @returns {Promise<Object>} Analysis with characters and worldInfo
  */
-export async function analyzeBook(bookText, apiKey, model = 'anthropic/claude-3.5-sonnet', contextLength = 200000, sessionId = null, updateProgress = null, apiBaseUrl = DEFAULT_API_BASE_URL, chapters = null, maxCompletionTokens = null) {
+export async function analyzeBook(bookText, {
+  apiKey,
+  model = 'anthropic/claude-3.5-sonnet',
+  contextLength = 200000,
+  sessionId = null,
+  updateProgress = null,
+  apiBaseUrl = DEFAULT_API_BASE_URL,
+  chapters = null,
+  maxCompletionTokens = null,
+} = {}) {
+  if (!apiKey) {
+    throw new Error('apiKey is required for analyzeBook');
+  }
+
   const progress = (msg) => { if (updateProgress && sessionId) updateProgress(sessionId, msg); };
 
   const safeContextSize = Math.floor(contextLength * CONTEXT_INPUT_RATIO);
