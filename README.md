@@ -47,8 +47,8 @@ Free public domain books in EPUB format:
 ### Clone and Install
 
 ```bash
-git clone <your-repo-url>
-cd chatbot-maker
+git clone [<your-repo-url>](https://github.com/aminteractivesoftware/chatbotmaker)
+cd chatbotmaker
 npm install
 ```
 
