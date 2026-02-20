@@ -202,7 +202,7 @@ export function createProcessRouter(uploadsPath) {
     try {
       updateProgress(sessionId, 'Starting file processing...');
 
-      const { apiKey, model, contextLength, useCoverFromEpub, apiBaseUrl } = req.body;
+      const { apiKey, model, contextLength, maxCompletionTokens, useCoverFromEpub, apiBaseUrl } = req.body;
       const file = req.files?.file?.[0];
       const coverImage = req.files?.coverImage?.[0];
 
@@ -244,8 +244,9 @@ export function createProcessRouter(uploadsPath) {
       // AI analysis
       updateProgress(sessionId, 'Analyzing book with AI... This may take a few minutes.');
       const contextSize = parseInt(contextLength) || DEFAULT_CONTEXT_LENGTH;
+      const maxCompTokens = parseInt(maxCompletionTokens) || null;
       const providerUrl = apiBaseUrl || DEFAULT_API_BASE_URL;
-      const analysis = await analyzeBook(bookText, apiKey, model, contextSize, sessionId, updateProgress, providerUrl, epubData.chapters);
+      const analysis = await analyzeBook(bookText, apiKey, model, contextSize, sessionId, updateProgress, providerUrl, epubData.chapters, maxCompTokens);
       updateProgress(sessionId, `AI analysis complete - found ${analysis.characters?.length || 0} characters`);
 
       // Generate outputs
@@ -254,7 +255,7 @@ export function createProcessRouter(uploadsPath) {
       if (!analysis.characters?.length) throw new Error('No characters found in book analysis');
 
       const characterCards = generateCharacterCards(analysis.characters, coverImageBase64);
-      const lorebook = generateLorebook(analysis.worldInfo || {});
+      const lorebook = generateLorebook(analysis.worldInfo || {}, analysis.characters);
       logger.info(`Generated ${characterCards.length} cards, ${lorebook.entries.length} lorebook entries`);
 
       if (!characterCards.length) throw new Error('Failed to generate character cards');
@@ -284,7 +285,7 @@ export function createProcessRouter(uploadsPath) {
   // POST /summary — text summary processing
   router.post('/summary', upload.single('coverImage'), async (req, res) => {
     try {
-      const { summary, apiKey, model, contextLength, apiBaseUrl } = req.body;
+      const { summary, apiKey, model, contextLength, maxCompletionTokens, apiBaseUrl } = req.body;
       const coverImage = req.file;
 
       if (!summary) return res.status(400).json({ error: 'Summary text is required' });
@@ -297,11 +298,12 @@ export function createProcessRouter(uploadsPath) {
       }
 
       const contextSize = parseInt(contextLength) || DEFAULT_CONTEXT_LENGTH;
+      const maxCompTokens = parseInt(maxCompletionTokens) || null;
       const providerUrl = apiBaseUrl || DEFAULT_API_BASE_URL;
-      const analysis = await analyzeBook(summary, apiKey, model, contextSize, null, null, providerUrl);
+      const analysis = await analyzeBook(summary, apiKey, model, contextSize, null, null, providerUrl, null, maxCompTokens);
 
       const characterCards = generateCharacterCards(analysis.characters, coverImageBase64);
-      const lorebook = generateLorebook(analysis.worldInfo);
+      const lorebook = generateLorebook(analysis.worldInfo, analysis.characters);
 
       if (coverImage) await cleanupFiles(coverImage.path);
 

@@ -280,19 +280,21 @@ function generateSecondaryKeys(description, category) {
 
 // Category configuration: order (insertion priority), weight, depth, position
 const CATEGORY_CONFIG = {
-  setting:  { order: 1000, weight: 50, depth: 8, position: 0 }, // Before char defs — always-on world context
-  location: { order: 800,  weight: 30, depth: 6, position: 1 }, // After char defs
-  faction:  { order: 700,  weight: 25, depth: 6, position: 1 },
-  concept:  { order: 600,  weight: 20, depth: 4, position: 1 },
-  item:     { order: 500,  weight: 15, depth: 4, position: 1 },
+  setting:   { order: 1000, weight: 50, depth: 8, position: 0 }, // Before char defs — always-on world context
+  character: { order: 900,  weight: 35, depth: 6, position: 1 }, // After char defs — triggered by character name
+  location:  { order: 800,  weight: 30, depth: 6, position: 1 },
+  faction:   { order: 700,  weight: 25, depth: 6, position: 1 },
+  concept:   { order: 600,  weight: 20, depth: 4, position: 1 },
+  item:      { order: 500,  weight: 15, depth: 4, position: 1 },
 };
 
 /**
- * Generate lorebook from world info
+ * Generate lorebook from world info and characters
  * @param {Object} worldInfo - World information object from AI analysis
+ * @param {Array} characters - Character objects from AI analysis
  * @returns {Object} Formatted lorebook
  */
-export function generateLorebook(worldInfo) {
+export function generateLorebook(worldInfo, characters = []) {
   const entries = {};
   let entryId = 1;
   let displayIndex = 0;
@@ -379,6 +381,22 @@ export function generateLorebook(worldInfo) {
   if (worldInfo.items) {
     worldInfo.items.forEach((item) => {
       createEntry(item.name, 'item', item.description, item.keywords || []);
+    });
+  }
+
+  // Add characters
+  if (characters && characters.length > 0) {
+    characters.forEach((char) => {
+      if (!char.name) return;
+      const parts = [];
+      if (char.background) parts.push(char.background);
+      if (char.physicalDescription) parts.push(char.physicalDescription);
+      if (char.personality) parts.push(char.personality);
+      const description = parts.join('\n\n') || char.briefDescription || '';
+      if (!description) return;
+
+      const keywords = Array.isArray(char.tags) ? char.tags : [];
+      createEntry(char.name, 'character', description, keywords);
     });
   }
 

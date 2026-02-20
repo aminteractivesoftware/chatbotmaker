@@ -34,6 +34,7 @@ function App() {
   const [progressMessage, setProgressMessage] = useState('')
   const [testStatus, setTestStatus] = useState(null)
   const [fetchError, setFetchError] = useState('')
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const fetchErrorTimeoutRef = useRef(null)
 
   const onProgressMessage = useCallback((msg) => setProgressMessage(msg), [])
@@ -133,6 +134,16 @@ function App() {
     }
   }, [])
 
+  // Elapsed timer while loading
+  useEffect(() => {
+    if (!loading) {
+      setElapsedSeconds(0)
+      return
+    }
+    const timer = setInterval(() => setElapsedSeconds(s => s + 1), 1000)
+    return () => clearInterval(timer)
+  }, [loading])
+
   const handleProcess = async (formData) => {
     if (!apiKey.trim()) {
       setError('Please enter your API key')
@@ -152,6 +163,9 @@ function App() {
       const selectedModelData = models.find(m => m.id === selectedModel)
       const contextLength = selectedModelData?.context_length || DEFAULT_CONTEXT_LENGTH
       formData.append('contextLength', contextLength)
+      if (selectedModelData?.max_completion_tokens) {
+        formData.append('maxCompletionTokens', selectedModelData.max_completion_tokens)
+      }
 
       const endpoint = mode === 'file' ? '/api/process/file' : '/api/process/summary'
       const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
@@ -225,7 +239,7 @@ function App() {
               type="password"
               placeholder="Enter your API key..."
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => { setApiKey(e.target.value); setError('') }}
               className="flex-1"
             />
             <button
@@ -270,6 +284,9 @@ function App() {
               {selectedModelData && (
                 <small className="context-info">
                   Context window: {(selectedModelData.context_length / 1000).toFixed(0)}K tokens
+                  {selectedModelData.max_completion_tokens && (
+                    <> | Max output: {(selectedModelData.max_completion_tokens / 1000).toFixed(0)}K tokens</>
+                  )}
                   {' '}- Large books will be automatically chunked at chapter boundaries
                 </small>
               )}
@@ -303,6 +320,7 @@ function App() {
         <div className="loading">
           <div className="spinner"></div>
           <p>{progressMessage || 'Processing... This may take a few minutes depending on book size.'}</p>
+          <small>Elapsed: {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, '0')}</small>
           <small>Please keep this tab open</small>
         </div>
       )}
@@ -324,7 +342,7 @@ function App() {
         </div>
       )}
 
-      {!loading && !results && !error && (
+      {!loading && !results && (
         <>
           {mode === 'file' ? (
             <FileUpload onUpload={handleProcess} contextLength={selectedModelData?.context_length || DEFAULT_CONTEXT_LENGTH} />

@@ -14,7 +14,10 @@ export const CONTEXT_INPUT_RATIO = 0.5;
 export const CHUNK_FILL_RATIO = 0.8;
 
 // AI request limits
-export const MAX_RESPONSE_TOKENS = 8000;
+export const MAX_RESPONSE_TOKENS = 8000; // minimum floor; actual limit is calculated dynamically
+export const MAX_CONTINUATION_ATTEMPTS = 2;
+export const MAX_CHARACTER_RETRIES = 2;
+export const MAX_PARALLEL_CHARACTER_CALLS = 3;
 export const AI_REQUEST_TIMEOUT_MS = 300000; // 5 minutes
 export const CONNECTION_TEST_TIMEOUT_MS = 15000;
 
