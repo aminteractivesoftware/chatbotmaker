@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
+import { isModelFree } from '../utils/modelUtils'
 import './ModelSelector.css'
 
 function ModelSelector({ models, selectedModel, onSelectModel, disabled }) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [showOnlyFree, setShowOnlyFree] = useState(true)
+  const [sortBy, setSortBy] = useState('context') // 'name' | 'context' | 'price'
   const dropdownRef = useRef(null)
   const searchInputRef = useRef(null)
 
@@ -32,17 +34,37 @@ function ModelSelector({ models, selectedModel, onSelectModel, disabled }) {
       model.id.toLowerCase().includes(search.toLowerCase()) ||
       (model.name || '').toLowerCase().includes(search.toLowerCase())
 
-    const matchesFree = !showOnlyFree ||
-      (model.pricing?.prompt === '0' && model.pricing?.completion === '0') ||
-      model.id.includes('free')
+    const matchesFree = !showOnlyFree || isModelFree(model)
 
     return matchesSearch && matchesFree
+  }).sort((a, b) => {
+    if (sortBy === 'name') {
+      return (a.name || a.id).localeCompare(b.name || b.id)
+    }
+    if (sortBy === 'price') {
+      const aPrice = parseFloat(a.pricing?.prompt) || 0
+      const bPrice = parseFloat(b.pricing?.prompt) || 0
+      return aPrice - bPrice // cheapest first
+    }
+    // 'context' — largest context first
+    return (b.context_length || 0) - (a.context_length || 0)
   })
 
   const selectedModelData = models.find(m => m.id === selectedModel)
-  const isFree = (model) =>
-    (model.pricing?.prompt === '0' && model.pricing?.completion === '0') ||
-    model.id.includes('free')
+
+  const formatPrice = (model) => {
+    if (!model.pricing) return null
+    if (isModelFree(model)) return 'Free'
+    const prompt = parseFloat(model.pricing.prompt)
+    const completion = parseFloat(model.pricing.completion)
+    if (isNaN(prompt) && isNaN(completion)) return null
+    // Negative values are sentinel/variable pricing (e.g. Auto Router)
+    if (prompt < 0 || completion < 0) return 'Variable pricing'
+    // Prices from OpenRouter are per-token; convert to per-million-tokens for readability
+    const promptPerM = (prompt * 1_000_000).toFixed(2)
+    const completionPerM = (completion * 1_000_000).toFixed(2)
+    return `$${promptPerM} / $${completionPerM} per 1M tokens`
+  }
 
   const handleSelect = (modelId) => {
     onSelectModel(modelId)
@@ -64,7 +86,7 @@ function ModelSelector({ models, selectedModel, onSelectModel, disabled }) {
               {selectedModelData.name || selectedModelData.id}
               <span className="model-context">
                 {' '}({(selectedModelData.context_length / 1000).toFixed(0)}K ctx)
-                {isFree(selectedModelData) && ' 🆓'}
+                {isModelFree(selectedModelData) && ' 🆓'}
               </span>
             </>
           ) : (
@@ -96,6 +118,30 @@ function ModelSelector({ models, selectedModel, onSelectModel, disabled }) {
               />
               Show only free models
             </label>
+            <div className="model-selector-sort">
+              <span className="sort-label">Sort:</span>
+              <button
+                type="button"
+                className={`sort-btn ${sortBy === 'name' ? 'active' : ''}`}
+                onClick={(e) => { e.stopPropagation(); setSortBy('name') }}
+              >
+                Name
+              </button>
+              <button
+                type="button"
+                className={`sort-btn ${sortBy === 'context' ? 'active' : ''}`}
+                onClick={(e) => { e.stopPropagation(); setSortBy('context') }}
+              >
+                Context
+              </button>
+              <button
+                type="button"
+                className={`sort-btn ${sortBy === 'price' ? 'active' : ''}`}
+                onClick={(e) => { e.stopPropagation(); setSortBy('price') }}
+              >
+                Price
+              </button>
+            </div>
           </div>
 
           <div className="model-selector-list">
@@ -108,10 +154,15 @@ function ModelSelector({ models, selectedModel, onSelectModel, disabled }) {
                 >
                   <div className="model-name">
                     {model.name || model.id}
-                    {isFree(model) && <span className="free-badge">🆓</span>}
+                    {isModelFree(model) && <span className="free-badge">🆓</span>}
                   </div>
-                  <div className="model-context">
-                    {(model.context_length / 1000).toFixed(0)}K tokens
+                  <div className="model-meta">
+                    <span className="model-context">
+                      {(model.context_length / 1000).toFixed(0)}K tokens
+                    </span>
+                    {formatPrice(model) && (
+                      <span className="model-price">{formatPrice(model)}</span>
+                    )}
                   </div>
                 </div>
               ))

@@ -1,6 +1,7 @@
 import express from 'express';
 import { generateCharacterCardPng } from '../utils/pngMetadata.js';
 import sharp from 'sharp';
+import logger from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -46,7 +47,7 @@ router.post('/character/png', async (req, res) => {
 
     res.send(pngBuffer);
   } catch (error) {
-    console.error('Error generating character PNG:', error);
+    logger.error('Error generating character PNG:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -67,7 +68,7 @@ router.post('/character/json', async (req, res) => {
 
     res.json(characterData);
   } catch (error) {
-    console.error('Error generating character JSON:', error);
+    logger.error('Error generating character JSON:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -92,7 +93,7 @@ router.post('/lorebook/json', async (req, res) => {
 
     res.json(lorebookData);
   } catch (error) {
-    console.error('Error generating lorebook JSON:', error);
+    logger.error('Error generating lorebook JSON:', error);
     res.status(500).json({ error: error.message });
   }
 });

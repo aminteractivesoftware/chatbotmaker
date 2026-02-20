@@ -1,217 +1,278 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs/promises';
+import { fileURLToPath } from 'url';
 import { parseEpub, extractEpubCover } from '../services/fileParser.js';
-import { analyzeBook, getAvailableModels } from '../services/aiService.js';
+import { analyzeBook, getAvailableModels, testConnection } from '../services/aiService.js';
 import { generateCharacterCards, generateLorebook } from '../services/cardGenerator.js';
 import { updateProgress, getProgress, clearProgress } from '../utils/progressTracker.js';
-import fs from 'fs/promises';
+import logger from '../utils/logger.js';
+import {
+  DEFAULT_API_BASE_URL,
+  DEFAULT_CONTEXT_LENGTH,
+  MAX_FILE_SIZE_BYTES,
+  SUPPORTED_EXTENSIONS,
+  CONTEXT_INPUT_RATIO,
+  CHUNK_FILL_RATIO,
+  CHARS_PER_TOKEN,
+} from '../config/constants.js';
 
-const router = express.Router();
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-const storage = multer.diskStorage({
-  destination: 'uploads/',
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname);
+function validateFileExtension(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+    return `Only ${SUPPORTED_EXTENSIONS.join(' and ')} files are supported`;
   }
-});
+  return null;
+}
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
-});
-
-// Get available models
-router.get('/models', async (req, res) => {
-  try {
-    const apiKey = req.headers['x-api-key'];
-    if (!apiKey) {
-      return res.status(400).json({ error: 'API key is required' });
-    }
-
-    const models = await getAvailableModels(apiKey);
-    res.json({ models });
-  } catch (error) {
-    console.error('Error fetching models:', error);
-    res.status(500).json({ error: error.message });
+async function cleanupFiles(...filePaths) {
+  for (const p of filePaths) {
+    if (p) await fs.unlink(p).catch(() => {});
   }
-});
+}
 
-// Get progress for a session
-router.get('/progress/:sessionId', (req, res) => {
-  const { sessionId } = req.params;
-  const progress = getProgress(sessionId);
-  
-  if (progress) {
-    res.json(progress);
-  } else {
-    res.json({ message: 'No progress available', timestamp: Date.now() });
-  }
-});
+function generateSessionId() {
+  return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
 
-// Process uploaded file
-router.post('/file', upload.fields([
-  { name: 'file', maxCount: 1 },
-  { name: 'coverImage', maxCount: 1 }
-]), async (req, res) => {
-  // Use client-provided sessionId or generate one
-  const sessionId = req.body.sessionId || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
-  try {
-    console.log('Processing file upload request with sessionId:', sessionId);
-    updateProgress(sessionId, 'Starting file processing...');
-    
-    const { apiKey, model, contextLength, useCoverFromEpub } = req.body;
-    const file = req.files?.file?.[0];
-    const coverImage = req.files?.coverImage?.[0];
+// ---------------------------------------------------------------------------
+// Router factory — accepts a configurable uploads path
+// ---------------------------------------------------------------------------
 
-    if (!file) {
-      console.error('No file uploaded');
-      return res.status(400).json({ error: 'No file uploaded' });
+export function createProcessRouter(uploadsPath) {
+  const router = express.Router();
+
+  const storage = multer.diskStorage({
+    destination: uploadsPath,
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+  });
+
+  const upload = multer({ storage, limits: { fileSize: MAX_FILE_SIZE_BYTES } });
+
+  // GET /models
+  router.get('/models', async (req, res) => {
+    try {
+      const apiKey = req.headers['x-api-key'];
+      const apiBaseUrl = req.headers['x-api-base-url'] || DEFAULT_API_BASE_URL;
+      if (!apiKey) return res.status(400).json({ error: 'API key is required' });
+
+      const models = await getAvailableModels(apiKey, apiBaseUrl);
+      res.json({ models });
+    } catch (error) {
+      logger.error('Error fetching models:', error.message);
+      res.status(500).json({ error: error.message });
     }
+  });
 
-    if (!apiKey) {
-      console.error('API key missing');
-      return res.status(400).json({ error: 'API key is required' });
+  // POST /test-connection
+  router.post('/test-connection', async (req, res) => {
+    try {
+      const { apiBaseUrl, apiKey } = req.body;
+      if (!apiKey) return res.status(400).json({ success: false, error: 'API key is required' });
+      if (!apiBaseUrl) return res.status(400).json({ success: false, error: 'API base URL is required' });
+
+      const result = await testConnection(apiBaseUrl, apiKey);
+      res.json(result);
+    } catch (error) {
+      logger.error('Error testing connection:', error.message);
+      res.status(500).json({ success: false, error: error.message });
     }
-    
-    console.log(`Processing file: ${file.originalname}, model: ${model}`);
+  });
 
-    const ext = path.extname(file.originalname).toLowerCase();
+  // POST /preview — parse-only stats (no AI cost)
+  router.post('/preview', upload.single('file'), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: 'No file uploaded' });
 
-    if (ext !== '.epub' && ext !== '.mobi') {
-      console.error('Invalid file type:', ext);
-      return res.status(400).json({ error: 'Only .epub and .mobi files are supported' });
+      const extError = validateFileExtension(file.originalname);
+      if (extError) {
+        await cleanupFiles(file.path);
+        return res.status(400).json({ error: extError });
+      }
+
+      const epubData = await parseEpub(file.path);
+      const contextLength = parseInt(req.body.contextLength) || DEFAULT_CONTEXT_LENGTH;
+
+      const safeContextSize = Math.floor(contextLength * CONTEXT_INPUT_RATIO);
+      const maxCharsForInput = safeContextSize * CHARS_PER_TOKEN;
+      const charsPerChunk = Math.floor(safeContextSize * CHUNK_FILL_RATIO) * CHARS_PER_TOKEN;
+
+      const textLength = epubData.text.length;
+      const estimatedTokens = Math.ceil(textLength / CHARS_PER_TOKEN);
+      const chapterCount = epubData.chapters?.length || 1;
+      const fitsInContext = textLength <= maxCharsForInput;
+
+      let estimatedChunks = 1;
+      if (!fitsInContext) {
+        let currentSize = 0;
+        estimatedChunks = 1;
+        for (const ch of (epubData.chapters || [])) {
+          const chLen = ch.text.length + (ch.title ? ch.title.length + 10 : 0);
+          if (chLen > charsPerChunk) {
+            if (currentSize > 0) estimatedChunks++;
+            estimatedChunks += Math.ceil(chLen / charsPerChunk);
+            currentSize = 0;
+          } else if (currentSize + chLen > charsPerChunk) {
+            estimatedChunks++;
+            currentSize = chLen;
+          } else {
+            currentSize += chLen;
+          }
+        }
+      }
+
+      const totalRequests = fitsInContext ? 1 : estimatedChunks + 1;
+
+      await cleanupFiles(file.path);
+
+      res.json({
+        fileName: file.originalname,
+        textLength,
+        estimatedTokens,
+        chapterCount,
+        fitsInContext,
+        estimatedChunks: fitsInContext ? 0 : estimatedChunks,
+        totalRequests,
+        contextLength,
+      });
+    } catch (error) {
+      logger.error('Error previewing file:', error.message);
+      if (req.file) await cleanupFiles(req.file.path);
+      res.status(500).json({ error: error.message });
     }
+  });
 
-    updateProgress(sessionId, 'Parsing EPUB file...');
-    console.log('Parsing EPUB file...');
-    const epubData = await parseEpub(file.path);
-    const bookText = epubData.text;
-    const textLength = bookText.length;
-    console.log(`EPUB parsed, text length: ${textLength} characters`);
-    updateProgress(sessionId, `EPUB parsed (${textLength.toLocaleString()} characters)`);
+  // GET /progress/:sessionId
+  router.get('/progress/:sessionId', (req, res) => {
+    const progress = getProgress(req.params.sessionId);
+    res.json(progress || { message: 'No progress available', timestamp: Date.now() });
+  });
 
-    // Handle cover image
-    updateProgress(sessionId, 'Processing cover image...');
-    console.log('Processing cover image...');
-    let coverImageBase64 = null;
-    if (useCoverFromEpub === 'true' && epubData.hasCover) {
-      console.log('Extracting cover from book file');
-      const coverBuffer = await extractEpubCover(file.path);
-      coverImageBase64 = coverBuffer.toString('base64');
-    } else if (coverImage) {
-      console.log('Using uploaded cover image');
-      const coverBuffer = await fs.readFile(coverImage.path);
-      coverImageBase64 = coverBuffer.toString('base64');
+  // POST /file — full EPUB processing pipeline
+  router.post('/file', upload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'coverImage', maxCount: 1 },
+  ]), async (req, res) => {
+    const sessionId = req.body.sessionId || generateSessionId();
+
+    try {
+      updateProgress(sessionId, 'Starting file processing...');
+
+      const { apiKey, model, contextLength, useCoverFromEpub, apiBaseUrl } = req.body;
+      const file = req.files?.file?.[0];
+      const coverImage = req.files?.coverImage?.[0];
+
+      if (!file) return res.status(400).json({ error: 'No file uploaded' });
+      if (!apiKey) return res.status(400).json({ error: 'API key is required' });
+
+      const extError = validateFileExtension(file.originalname);
+      if (extError) return res.status(400).json({ error: extError });
+
+      logger.info(`Processing: ${file.originalname}, model: ${model}`);
+
+      // Parse EPUB
+      updateProgress(sessionId, 'Parsing EPUB file...');
+      const epubData = await parseEpub(file.path);
+      const bookText = epubData.text;
+      logger.info(`EPUB parsed: ${bookText.length} chars`);
+      updateProgress(sessionId, `EPUB parsed (${bookText.length.toLocaleString()} characters)`);
+
+      // Cover image
+      updateProgress(sessionId, 'Processing cover image...');
+      let coverImageBase64 = null;
+      if (useCoverFromEpub === 'true' && epubData.hasCover) {
+        const coverBuffer = await extractEpubCover(file.path);
+        coverImageBase64 = coverBuffer.toString('base64');
+      } else if (coverImage) {
+        const coverBuffer = await fs.readFile(coverImage.path);
+        coverImageBase64 = coverBuffer.toString('base64');
+      }
+
+      // AI analysis
+      updateProgress(sessionId, 'Analyzing book with AI... This may take a few minutes.');
+      const contextSize = parseInt(contextLength) || DEFAULT_CONTEXT_LENGTH;
+      const providerUrl = apiBaseUrl || DEFAULT_API_BASE_URL;
+      const analysis = await analyzeBook(bookText, apiKey, model, contextSize, sessionId, updateProgress, providerUrl, epubData.chapters);
+      updateProgress(sessionId, `AI analysis complete - found ${analysis.characters?.length || 0} characters`);
+
+      // Generate outputs
+      updateProgress(sessionId, 'Generating character cards and lorebook...');
+
+      if (!analysis.characters?.length) throw new Error('No characters found in book analysis');
+
+      const characterCards = generateCharacterCards(analysis.characters, coverImageBase64);
+      const lorebook = generateLorebook(analysis.worldInfo || {});
+      logger.info(`Generated ${characterCards.length} cards, ${lorebook.entries.length} lorebook entries`);
+
+      if (!characterCards.length) throw new Error('Failed to generate character cards');
+      if (!lorebook?.entries) throw new Error('Failed to generate lorebook');
+
+      // Cleanup
+      await cleanupFiles(file.path, coverImage?.path);
+
+      updateProgress(sessionId, 'Complete! Sending results...');
+      clearProgress(sessionId);
+
+      res.json({
+        characters: characterCards,
+        lorebook,
+        bookTitle: analysis.bookTitle,
+        coverImage: coverImageBase64,
+        sessionId,
+      });
+    } catch (error) {
+      logger.error('Error processing file:', error.message);
+      clearProgress(sessionId);
+      res.status(500).json({ error: error.message || 'An error occurred during processing' });
     }
+  });
 
-    // Analyze book with AI
-    updateProgress(sessionId, 'Analyzing book with AI... This may take a few minutes.');
-    console.log('Starting AI analysis...');
-    const contextSize = parseInt(contextLength) || 200000;
-    const analysis = await analyzeBook(bookText, apiKey, model, contextSize, sessionId, updateProgress);
-    console.log('AI analysis complete');
-    updateProgress(sessionId, `AI analysis complete - found ${analysis.characters?.length || 0} characters`);
+  // POST /summary — text summary processing
+  router.post('/summary', upload.single('coverImage'), async (req, res) => {
+    try {
+      const { summary, apiKey, model, contextLength, apiBaseUrl } = req.body;
+      const coverImage = req.file;
 
-    // Generate character cards and lorebook
-    updateProgress(sessionId, 'Generating character cards and lorebook...');
-    console.log('Generating character cards and lorebook...');
-    
-    if (!analysis.characters || !Array.isArray(analysis.characters) || analysis.characters.length === 0) {
-      throw new Error('No characters found in book analysis');
+      if (!summary) return res.status(400).json({ error: 'Summary text is required' });
+      if (!apiKey) return res.status(400).json({ error: 'API key is required' });
+
+      let coverImageBase64 = null;
+      if (coverImage) {
+        const coverBuffer = await fs.readFile(coverImage.path);
+        coverImageBase64 = coverBuffer.toString('base64');
+      }
+
+      const contextSize = parseInt(contextLength) || DEFAULT_CONTEXT_LENGTH;
+      const providerUrl = apiBaseUrl || DEFAULT_API_BASE_URL;
+      const analysis = await analyzeBook(summary, apiKey, model, contextSize, null, null, providerUrl);
+
+      const characterCards = generateCharacterCards(analysis.characters, coverImageBase64);
+      const lorebook = generateLorebook(analysis.worldInfo);
+
+      if (coverImage) await cleanupFiles(coverImage.path);
+
+      res.json({
+        characters: characterCards,
+        lorebook,
+        bookTitle: analysis.bookTitle,
+        coverImage: coverImageBase64,
+      });
+    } catch (error) {
+      logger.error('Error processing summary:', error.message);
+      res.status(500).json({ error: error.message });
     }
-    
-    const characterCards = generateCharacterCards(analysis.characters, coverImageBase64);
-    console.log(`Generated ${characterCards.length} character cards`);
-    updateProgress(sessionId, `Generated ${characterCards.length} character cards`);
-    
-    const lorebook = generateLorebook(analysis.worldInfo || {});
-    console.log(`Generated lorebook with ${lorebook.entries.length} entries`);
-    updateProgress(sessionId, `Generated lorebook with ${lorebook.entries.length} entries`);
+  });
 
-    // Validate the output
-    if (!characterCards || characterCards.length === 0) {
-      throw new Error('Failed to generate character cards');
-    }
+  return router;
+}
 
-    if (!lorebook || !lorebook.entries) {
-      throw new Error('Failed to generate lorebook');
-    }
-
-    // Cleanup uploaded files
-    await fs.unlink(file.path).catch(() => {});
-    if (coverImage) {
-      await fs.unlink(coverImage.path).catch(() => {});
-    }
-
-    updateProgress(sessionId, 'Complete! Sending results...');
-    console.log('Processing complete, sending response');
-    
-    const responseData = {
-      characters: characterCards,
-      lorebook,
-      bookTitle: analysis.bookTitle,
-      coverImage: coverImageBase64,
-      sessionId
-    };
-    
-    clearProgress(sessionId);
-    res.json(responseData);
-
-  } catch (error) {
-    console.error('Error processing file:', error);
-    console.error('Stack trace:', error.stack);
-    clearProgress(sessionId);
-    res.status(500).json({ error: error.message || 'An error occurred during processing' });
-  }
-});
-
-// Process text summary
-router.post('/summary', upload.single('coverImage'), async (req, res) => {
-  try {
-    const { summary, apiKey, model, contextLength } = req.body;
-    const coverImage = req.file;
-
-    if (!summary) {
-      return res.status(400).json({ error: 'Summary text is required' });
-    }
-
-    if (!apiKey) {
-      return res.status(400).json({ error: 'API key is required' });
-    }
-
-    // Handle cover image
-    let coverImageBase64 = null;
-    if (coverImage) {
-      const coverBuffer = await fs.readFile(coverImage.path);
-      coverImageBase64 = coverBuffer.toString('base64');
-    }
-
-    // Analyze summary with AI
-    const contextSize = parseInt(contextLength) || 200000;
-    const analysis = await analyzeBook(summary, apiKey, model, contextSize);
-
-    // Generate character cards and lorebook
-    const characterCards = generateCharacterCards(analysis.characters, coverImageBase64);
-    const lorebook = generateLorebook(analysis.worldInfo);
-
-    // Cleanup uploaded file
-    if (coverImage) {
-      await fs.unlink(coverImage.path).catch(() => {});
-    }
-
-    res.json({
-      characters: characterCards,
-      lorebook,
-      bookTitle: analysis.bookTitle,
-      coverImage: coverImageBase64
-    });
-
-  } catch (error) {
-    console.error('Error processing summary:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-export default router;
+// Default export for backward compatibility (standalone node server.js usage)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const defaultRouter = createProcessRouter(path.resolve(__dirname, '..', 'uploads'));
+export default defaultRouter;

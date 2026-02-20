@@ -6,13 +6,7 @@ function Results({ data }) {
   const [selectedChar, setSelectedChar] = useState(null)
   const [downloading, setDownloading] = useState(false)
 
-  console.log('=== Results Component Rendered ===')
-  console.log('Data received:', data)
-  console.log('Component is mounting/updating')
-
-  // Validate data
   if (!data) {
-    console.error('Results: No data provided')
     return (
       <div className="error">
         <h3>No data to display</h3>
@@ -21,42 +15,23 @@ function Results({ data }) {
     )
   }
 
-  console.log('Data keys:', Object.keys(data))
-  console.log('Characters type:', typeof data.characters)
-  console.log('Characters value:', data.characters)
-
   if (!data.characters || !Array.isArray(data.characters)) {
-    console.error('Results: Invalid data format - missing characters array')
-    console.error('Data structure:', Object.keys(data))
-    console.error('Characters:', data.characters)
     return (
       <div className="error">
         <h3>Invalid data format</h3>
         <p>Missing or invalid characters array</p>
-        <details>
-          <summary>Debug Info</summary>
-          <pre>{JSON.stringify(data, null, 2)}</pre>
-        </details>
       </div>
     )
   }
 
   if (!data.lorebook || !data.lorebook.entries) {
-    console.error('Results: Invalid data format - missing lorebook data')
     return (
       <div className="error">
         <h3>Invalid data format</h3>
         <p>Missing lorebook data</p>
-        <details>
-          <summary>Debug Info</summary>
-          <pre>{JSON.stringify(data, null, 2)}</pre>
-        </details>
       </div>
     )
   }
-  
-  console.log(`\u2713 Results component validated: ${data.characters.length} characters, ${data.lorebook.entries.length} lorebook entries`)
-  console.log('About to render Results UI...')
 
   const downloadJSON = (jsonData, filename) => {
     const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' })
@@ -85,8 +60,7 @@ function Results({ data }) {
       a.click()
       URL.revokeObjectURL(url)
     } catch (error) {
-      console.error('Error downloading PNG:', error)
-      alert('Failed to download PNG: ' + error.message)
+      // Silently handle — user sees the button re-enable
     } finally {
       setDownloading(false)
     }
@@ -101,7 +75,6 @@ function Results({ data }) {
   const downloadAllCharactersPNG = async () => {
     for (const char of data.characters) {
       await downloadCharacterPNG(char)
-      // Small delay between downloads
       await new Promise(resolve => setTimeout(resolve, 500))
     }
   }
@@ -113,11 +86,11 @@ function Results({ data }) {
   return (
     <div className="results">
       <div className="success">
-        ✅ Successfully generated {data.characters.length} character card(s) and lorebook!
+        Successfully generated {data.characters.length} character card(s) and lorebook!
       </div>
 
       <div className="card">
-        <h2>📖 {data.bookTitle || 'Your Book'}</h2>
+        <h2>{data.bookTitle || 'Your Book'}</h2>
 
         <div className="download-section">
           <h3>Download All</h3>
@@ -127,21 +100,21 @@ function Results({ data }) {
               onClick={downloadAllCharactersJSON}
               disabled={downloading}
             >
-              📄 All Characters JSON ({data.characters.length})
+              All Characters JSON ({data.characters.length})
             </button>
             <button
               className="primary-btn"
               onClick={downloadAllCharactersPNG}
               disabled={downloading}
             >
-              🖼️ All Characters PNG ({data.characters.length})
+              All Characters PNG ({data.characters.length})
             </button>
             <button
               className="secondary-btn"
               onClick={downloadLorebook}
               disabled={downloading}
             >
-              📚 Lorebook JSON
+              Lorebook JSON
             </button>
           </div>
         </div>
@@ -156,16 +129,9 @@ function Results({ data }) {
               className="character-card"
               onClick={() => setSelectedChar(selectedChar === idx ? null : idx)}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
+              <div className="char-header">
                 <h4>{char.data.name}</h4>
-                <span style={{ 
-                  fontSize: '12px', 
-                  padding: '4px 8px', 
-                  borderRadius: '4px', 
-                  background: char.isPersona ? 'var(--primary-orange)' : 'var(--sepia-dark)',
-                  whiteSpace: 'nowrap',
-                  marginLeft: '8px'
-                }}>
+                <span className={`role-badge ${char.isPersona ? 'role-badge-persona' : ''}`}>
                   {char.characterType || 'Character'}
                 </span>
               </div>
@@ -173,66 +139,43 @@ function Results({ data }) {
                 {char.data.description?.substring(0, 150)}...
               </p>
               {char.canBePersona && !char.isPersona && (
-                <p style={{ fontSize: '12px', color: 'var(--primary-orange)', marginTop: '8px' }}>
-                  ✨ Persona version available
-                </p>
+                <p className="persona-hint">Persona version available</p>
               )}
               {char.data.alternate_greetings && char.data.alternate_greetings.length > 0 && (
-                <p style={{ fontSize: '12px', color: 'var(--secondary-text)', marginTop: '4px' }}>
-                  💬 {char.data.alternate_greetings.length + 1} first message options
+                <p className="greeting-count">
+                  {char.data.alternate_greetings.length + 1} first message options
                 </p>
               )}
               {char.data.tags && char.data.tags.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
+                <div className="tag-list">
                   {char.data.tags.slice(0, 5).map((tag, tagIdx) => (
-                    <span
-                      key={tagIdx}
-                      style={{
-                        fontSize: '11px',
-                        padding: '2px 6px',
-                        borderRadius: '3px',
-                        background: '#2C2C2C',
-                        color: 'var(--secondary-text)'
-                      }}
-                    >
-                      {tag}
-                    </span>
+                    <span key={tagIdx} className="tag">{tag}</span>
                   ))}
                   {char.data.tags.length > 5 && (
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        padding: '2px 6px',
-                        color: 'var(--secondary-text)'
-                      }}
-                    >
-                      +{char.data.tags.length - 5} more
-                    </span>
+                    <span className="tag-overflow">+{char.data.tags.length - 5} more</span>
                   )}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+              <div className="card-actions">
                 <button
-                  className="secondary-btn"
+                  className="secondary-btn card-action-btn"
                   onClick={(e) => {
                     e.stopPropagation()
                     downloadJSON(char, `${char.data.name.replace(/[^a-z0-9]/gi, '_')}.json`)
                   }}
                   disabled={downloading}
-                  style={{ flex: 1, fontSize: '14px', padding: '8px' }}
                 >
-                  📄 JSON
+                  JSON
                 </button>
                 <button
-                  className="primary-btn"
+                  className="primary-btn card-action-btn"
                   onClick={(e) => {
                     e.stopPropagation()
                     downloadCharacterPNG(char)
                   }}
                   disabled={downloading}
-                  style={{ flex: 1, fontSize: '14px', padding: '8px' }}
                 >
-                  🖼️ PNG
+                  PNG
                 </button>
               </div>
               {selectedChar === idx && (
@@ -244,41 +187,25 @@ function Results({ data }) {
                   {char.data.tags && char.data.tags.length > 0 && (
                     <div className="detail-section">
                       <strong>Tags:</strong>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                      <div className="detail-tags">
                         {char.data.tags.map((tag, tagIdx) => (
-                          <span
-                            key={tagIdx}
-                            style={{
-                              fontSize: '12px',
-                              padding: '4px 10px',
-                              borderRadius: '4px',
-                              background: '#2C2C2C',
-                              color: 'var(--text-light)',
-                              border: '1px solid #3C3C3C'
-                            }}
-                          >
-                            {tag}
-                          </span>
+                          <span key={tagIdx} className="detail-tag">{tag}</span>
                         ))}
                       </div>
                     </div>
                   )}
                   <div className="detail-section">
                     <strong>Description:</strong>
-                    <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: '14px' }}>{char.data.description}</pre>
+                    <pre className="description-pre">{char.data.description}</pre>
                   </div>
                   <div className="detail-section">
                     <strong>First Message:</strong>
                     <p>{char.data.first_mes}</p>
                     {char.data.alternate_greetings && char.data.alternate_greetings.length > 0 && (
                       <>
-                        <p style={{ marginTop: '10px', color: 'var(--secondary-text)', fontSize: '14px' }}>
-                          <strong>Alternate First Messages:</strong>
-                        </p>
+                        <p className="alternate-label"><strong>Alternate First Messages:</strong></p>
                         {char.data.alternate_greetings.map((greeting, gIdx) => (
-                          <p key={gIdx} style={{ marginTop: '8px', paddingLeft: '10px', borderLeft: '2px solid var(--sepia-dark)' }}>
-                            {greeting}
-                          </p>
+                          <p key={gIdx} className="alternate-greeting">{greeting}</p>
                         ))}
                       </>
                     )}
@@ -301,7 +228,7 @@ function Results({ data }) {
             </div>
           ))}
           {data.lorebook.entries.length > 10 && (
-            <p style={{ color: '#888', textAlign: 'center', marginTop: '20px' }}>
+            <p className="more-entries">
               ...and {data.lorebook.entries.length - 10} more entries
             </p>
           )}

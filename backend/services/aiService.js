@@ -1,154 +1,319 @@
 import axios from 'axios';
-
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+import logger from '../utils/logger.js';
+import {
+  DEFAULT_API_BASE_URL,
+  CHARS_PER_TOKEN,
+  CONTEXT_INPUT_RATIO,
+  CHUNK_FILL_RATIO,
+  MAX_RESPONSE_TOKENS,
+  AI_REQUEST_TIMEOUT_MS,
+  CONNECTION_TEST_TIMEOUT_MS,
+} from '../config/constants.js';
 
 /**
- * Get available models from OpenRouter
- * @param {string} apiKey - OpenRouter API key
- * @returns {Promise<Array>} List of available models with context info
+ * Test connection to an OpenAI-compatible API
+ * @param {string} apiBaseUrl
+ * @param {string} apiKey
+ * @returns {Promise<{success: boolean, modelCount?: number, error?: string}>}
  */
-export async function getAvailableModels(apiKey) {
+export async function testConnection(apiBaseUrl, apiKey) {
   try {
-    const response = await axios.get('https://openrouter.ai/api/v1/models', {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'Chatbot Maker'
-      }
+    const response = await axios.get(`${apiBaseUrl}/models`, {
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      timeout: CONNECTION_TEST_TIMEOUT_MS,
     });
-
-    // Return models with context_length info
-    return response.data.data.map(model => ({
-      id: model.id,
-      name: model.name || model.id,
-      context_length: model.context_length || 4096,
-      pricing: model.pricing
-    }));
+    const models = response.data.data || response.data;
+    return { success: true, modelCount: Array.isArray(models) ? models.length : 0 };
   } catch (error) {
-    if (error.response) {
-      throw new Error(`Failed to fetch models: ${error.response.data.error?.message || error.response.statusText}`);
-    }
-    throw new Error(`Failed to fetch models: ${error.message}`);
+    const msg = error.response?.data?.error?.message || error.response?.statusText || error.message;
+    return { success: false, error: msg };
   }
 }
 
 /**
- * Split text into chunks based on token limit
- * @param {string} text - Text to chunk
- * @param {number} maxTokens - Maximum tokens per chunk (approximate)
- * @returns {Array<string>} Array of text chunks
+ * Get available models from an OpenAI-compatible API
+ * @param {string} apiKey
+ * @param {string} apiBaseUrl
+ * @returns {Promise<Array>}
  */
-function chunkText(text, maxTokens = 8000) {
-  // Approximate: 1 token ≈ 4 characters
-  const charsPerChunk = maxTokens * 4;
-  const chunks = [];
+export async function getAvailableModels(apiKey, apiBaseUrl = DEFAULT_API_BASE_URL) {
+  try {
+    const response = await axios.get(`${apiBaseUrl}/models`, {
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    });
+    const models = response.data.data || response.data;
+    if (!Array.isArray(models)) throw new Error('Unexpected response format from models endpoint');
 
-  // Split by paragraphs first
+    return models.map(model => ({
+      id: model.id,
+      name: model.name || model.id,
+      context_length: model.context_length || 4096,
+      pricing: model.pricing,
+    }));
+  } catch (error) {
+    const msg = error.response?.data?.error?.message || error.response?.statusText || error.message;
+    throw new Error(`Failed to fetch models: ${msg}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Text chunking
+// ---------------------------------------------------------------------------
+
+/**
+ * Split text into chunks by paragraphs (fallback for oversized chapters).
+ */
+function chunkText(text, maxTokens) {
+  const charsPerChunk = maxTokens * CHARS_PER_TOKEN;
+  const chunks = [];
   const paragraphs = text.split(/\n\n+/);
-  let currentChunk = '';
+  let current = '';
 
   for (const paragraph of paragraphs) {
-    if ((currentChunk + paragraph).length < charsPerChunk) {
-      currentChunk += paragraph + '\n\n';
+    if ((current + paragraph).length < charsPerChunk) {
+      current += paragraph + '\n\n';
     } else {
-      if (currentChunk) chunks.push(currentChunk.trim());
-      currentChunk = paragraph + '\n\n';
+      if (current) chunks.push(current.trim());
+      current = paragraph + '\n\n';
     }
   }
-
-  if (currentChunk) chunks.push(currentChunk.trim());
-
+  if (current) chunks.push(current.trim());
   return chunks;
 }
 
 /**
- * Summarize a chunk of text
- * @param {string} chunk - Text chunk to summarize
- * @param {string} apiKey - OpenRouter API key
- * @param {string} model - Model to use
- * @returns {Promise<string>} Summary of the chunk
+ * Split text into chunks at chapter boundaries.
+ * Falls back to paragraph splitting for oversized chapters.
  */
-async function summarizeChunk(chunk, apiKey, model) {
+function chunkByChapters(chapters, maxTokens) {
+  const charsPerChunk = maxTokens * CHARS_PER_TOKEN;
+  const chunks = [];
+  let current = '';
+
+  for (const chapter of chapters) {
+    const chapterText = chapter.title
+      ? `--- ${chapter.title} ---\n\n${chapter.text}`
+      : chapter.text;
+
+    if (chapterText.length > charsPerChunk) {
+      if (current) { chunks.push(current.trim()); current = ''; }
+      chunks.push(...chunkText(chapterText, maxTokens));
+      continue;
+    }
+
+    if (current && (current.length + chapterText.length) > charsPerChunk) {
+      chunks.push(current.trim());
+      current = '';
+    }
+    current += chapterText + '\n\n';
+  }
+  if (current) chunks.push(current.trim());
+
+  logger.info(`Chapter-aware chunking: ${chapters.length} chapters -> ${chunks.length} chunks`);
+  return chunks;
+}
+
+// ---------------------------------------------------------------------------
+// AI API helpers
+// ---------------------------------------------------------------------------
+
+function makeHeaders(apiKey) {
+  return { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+}
+
+/**
+ * Summarize a single chunk of text.
+ */
+async function summarizeChunk(chunk, apiKey, model, apiBaseUrl) {
   const response = await axios.post(
-    OPENROUTER_API_URL,
+    `${apiBaseUrl}/chat/completions`,
     {
-      model: model,
-      messages: [
-        {
-          role: 'user',
-          content: `Summarize this excerpt from a book, focusing on characters, plot events, world-building details, and key information:\n\n${chunk}`
-        }
-      ]
+      model,
+      messages: [{
+        role: 'user',
+        content: `Summarize this excerpt from a book, focusing on characters, plot events, world-building details, and key information:\n\n${chunk}`,
+      }],
+    },
+    { headers: makeHeaders(apiKey) },
+  );
+  return response.data.choices[0].message.content;
+}
+
+/**
+ * Chunk and summarize text that exceeds the model's context window.
+ */
+async function chunkAndSummarize(bookText, chapters, maxCharsForInput, safeContextSize, apiKey, model, apiBaseUrl, sessionId, updateProgress) {
+  const progress = (msg) => { if (updateProgress && sessionId) updateProgress(sessionId, msg); };
+  progress('Book too large, chunking into smaller pieces...');
+
+  const chunkTokenSize = Math.floor(safeContextSize * CHUNK_FILL_RATIO);
+  const chunks = (chapters && chapters.length > 0)
+    ? chunkByChapters(chapters, chunkTokenSize)
+    : chunkText(bookText, chunkTokenSize);
+
+  logger.info(`Split into ${chunks.length} chunks`);
+
+  const summaries = [];
+  for (let i = 0; i < chunks.length; i++) {
+    progress(`Summarizing chunk ${i + 1} of ${chunks.length}...`);
+    summaries.push(await summarizeChunk(chunks[i], apiKey, model, apiBaseUrl));
+  }
+
+  let combined = summaries.join('\n\n---\n\n');
+
+  if (combined.length > maxCharsForInput) {
+    logger.info('Combined summary still too large, creating final summary...');
+    combined = await summarizeChunk(combined, apiKey, model, apiBaseUrl);
+  }
+
+  return combined;
+}
+
+/**
+ * Send the analysis prompt to the AI and return the raw content string.
+ */
+async function requestAnalysis(textToAnalyze, apiKey, model, apiBaseUrl) {
+  const prompt = buildAnalysisPrompt(textToAnalyze);
+
+  const response = await axios.post(
+    `${apiBaseUrl}/chat/completions`,
+    {
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      stream: false,
+      max_tokens: MAX_RESPONSE_TOKENS,
     },
     {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'Chatbot Maker'
-      }
-    }
+      headers: makeHeaders(apiKey),
+      timeout: AI_REQUEST_TIMEOUT_MS,
+    },
   );
+
+  if (!response.data?.choices?.[0]?.message?.content) {
+    throw new Error('AI response missing message content');
+  }
 
   return response.data.choices[0].message.content;
 }
 
 /**
- * Analyze book text and extract characters and world information
- * @param {string} bookText - The book text or summary
- * @param {string} apiKey - OpenRouter API key
- * @param {string} model - Model to use (default: anthropic/claude-3.5-sonnet)
- * @param {number} contextLength - Model's context window size
- * @param {string} sessionId - Session ID for progress tracking
- * @param {Function} updateProgress - Progress update callback function
- * @returns {Promise<Object>} Analysis result with characters and world info
+ * Attempt to parse JSON from AI response, with repair logic for common issues.
  */
-export async function analyzeBook(bookText, apiKey, model = 'anthropic/claude-3.5-sonnet', contextLength = 200000, sessionId = null, updateProgress = null) {
-  // Calculate safe chunk size (leave room for prompt and response)
-  const safeContextSize = Math.floor(contextLength * 0.5); // Use 50% for input
-  const maxCharsForInput = safeContextSize * 4; // Approximate char to token ratio
+function parseAIResponse(content) {
+  // Try direct parse first
+  try { return JSON.parse(content); } catch { /* fall through to repair */ }
 
-  console.log(`Book size check: ${bookText.length} chars, max allowed: ${maxCharsForInput} chars`);
+  logger.debug('Direct JSON parse failed, attempting repair...');
+  let cleaned = content.trim();
 
-  let textToAnalyze = bookText;
+  // Strip markdown code fences
+  cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
 
-  // If text is too large, chunk and summarize first
-  if (bookText.length > maxCharsForInput) {
-    console.log(`Book text too large (${bookText.length} chars). Chunking and summarizing...`);
-    if (updateProgress && sessionId) {
-      updateProgress(sessionId, `Book too large, chunking into smaller pieces...`);
-    }
-
-    const chunks = chunkText(bookText, Math.floor(safeContextSize * 0.8));
-    console.log(`Split into ${chunks.length} chunks`);
-
-    // Summarize each chunk
-    const summaries = [];
-    for (let i = 0; i < chunks.length; i++) {
-      console.log(`Summarizing chunk ${i + 1}/${chunks.length}...`);
-      const summary = await summarizeChunk(chunks[i], apiKey, model);
-      summaries.push(summary);
-    }
-
-    // Combine summaries
-    textToAnalyze = summaries.join('\n\n---\n\n');
-    console.log(`Combined summary length: ${textToAnalyze.length} chars`);
-
-    // If still too large, summarize the summaries
-    if (textToAnalyze.length > maxCharsForInput) {
-      console.log('Combined summary still too large. Creating final summary...');
-      const finalSummary = await summarizeChunk(textToAnalyze, apiKey, model);
-      textToAnalyze = finalSummary;
-    }
+  // Extract outermost JSON object
+  const first = cleaned.indexOf('{');
+  const last = cleaned.lastIndexOf('}');
+  if (first !== -1 && last > first) {
+    cleaned = cleaned.substring(first, last + 1);
   }
 
-  const prompt = `Analyze this book text and extract detailed information about the characters and world. 
+  try { return JSON.parse(cleaned); } catch (err) {
+    throw new Error(`Failed to parse AI response: ${err.message}`);
+  }
+}
+
+/**
+ * Validate and normalize the parsed analysis object.
+ */
+function validateAnalysis(analysis) {
+  if (!analysis.characters || !Array.isArray(analysis.characters)) {
+    throw new Error('AI response missing characters array');
+  }
+  if (!analysis.worldInfo) {
+    logger.warn('AI response missing worldInfo, using empty structure');
+    analysis.worldInfo = { setting: '', locations: [], factions: [], items: [], concepts: [] };
+  }
+  if (!analysis.bookTitle) {
+    analysis.bookTitle = 'Unknown Book';
+  }
+  return analysis;
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point
+// ---------------------------------------------------------------------------
+
+/**
+ * Analyze book text and extract characters and world information.
+ * @param {string} bookText - The book text or summary
+ * @param {string} apiKey
+ * @param {string} model
+ * @param {number} contextLength - Model's context window size in tokens
+ * @param {string|null} sessionId
+ * @param {Function|null} updateProgress
+ * @param {string} apiBaseUrl
+ * @param {Array|null} chapters - Optional chapter array for chapter-aware chunking
+ * @returns {Promise<Object>} Analysis with characters and worldInfo
+ */
+export async function analyzeBook(bookText, apiKey, model = 'anthropic/claude-3.5-sonnet', contextLength = 200000, sessionId = null, updateProgress = null, apiBaseUrl = DEFAULT_API_BASE_URL, chapters = null) {
+  const progress = (msg) => { if (updateProgress && sessionId) updateProgress(sessionId, msg); };
+
+  const safeContextSize = Math.floor(contextLength * CONTEXT_INPUT_RATIO);
+  const maxCharsForInput = safeContextSize * CHARS_PER_TOKEN;
+
+  logger.info(`Book: ${bookText.length} chars, max input: ${maxCharsForInput} chars`);
+
+  // Chunk and summarize if needed
+  let textToAnalyze = bookText;
+  if (bookText.length > maxCharsForInput) {
+    textToAnalyze = await chunkAndSummarize(
+      bookText, chapters, maxCharsForInput, safeContextSize,
+      apiKey, model, apiBaseUrl, sessionId, updateProgress,
+    );
+  }
+
+  // Send to AI
+  progress(`Sending ${textToAnalyze.length.toLocaleString()} characters to AI (${model})...`);
+  logger.info(`Sending analysis request: ${textToAnalyze.length} chars to ${model}`);
+
+  try {
+    const content = await requestAnalysis(textToAnalyze, apiKey, model, apiBaseUrl);
+    logger.info(`Received response: ${content.length} chars`);
+    progress(`Received response (${content.length.toLocaleString()} characters), parsing...`);
+
+    const analysis = validateAnalysis(parseAIResponse(content));
+    logger.info(`Parsed ${analysis.characters.length} characters`);
+    progress(`Parsed ${analysis.characters.length} characters from AI response`);
+
+    return analysis;
+  } catch (error) {
+    logger.error('AI analysis error:', error.message);
+
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('AI request timed out. The book may be too large or the AI service is slow. Try a smaller book or try again later.');
+    }
+    if (error.response) {
+      const msg = error.response.data?.error?.message || error.response.data?.error || error.response.statusText;
+      throw new Error(`AI service error: ${msg}`);
+    }
+    if (error.request) {
+      throw new Error('No response from AI service. Check your internet connection and API key.');
+    }
+    throw new Error(`AI analysis failed: ${error.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Analysis prompt
+// ---------------------------------------------------------------------------
+
+function buildAnalysisPrompt(text) {
+  return `Analyze this book text and extract detailed information about the characters and world.
 
 CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks. Just raw JSON starting with { and ending with }.
 Ensure all quotes inside strings are properly escaped with backslashes.
 
 Book Text:
-${textToAnalyze}
+${text}
 
 Return a JSON object with this structure:
 {
@@ -173,11 +338,11 @@ Return a JSON object with this structure:
     }
   ],
   "worldInfo": {
-    "setting": "World description",
-    "locations": [{"name": "Location", "description": "Details"}],
-    "factions": [{"name": "Faction", "description": "Details"}],
-    "items": [{"name": "Item", "description": "Details"}],
-    "concepts": [{"name": "Concept", "description": "Explanation"}]
+    "setting": "Detailed world/universe description (2-3 paragraphs covering geography, society, rules, tone)",
+    "locations": [{"name": "Location Name", "description": "Detailed description of this place, its significance, and what happens there", "keywords": ["alias", "nickname", "related terms that should trigger this entry"]}],
+    "factions": [{"name": "Faction Name", "description": "Who they are, their goals, structure, and role in the story", "keywords": ["alias", "abbreviation", "leader name", "related terms"]}],
+    "items": [{"name": "Item Name", "description": "What it is, its properties, significance, and who uses it", "keywords": ["alias", "nickname", "related terms"]}],
+    "concepts": [{"name": "Concept Name", "description": "Explanation of this magic system, technology, social concept, etc.", "keywords": ["alias", "related terms", "slang used in-universe"]}]
   }
 }
 
@@ -187,202 +352,7 @@ Instructions:
 - Replace interaction partner names with {{user}} in scenarios/messages/dialogue
 - Use quotes for dialogue, asterisks for actions in messages
 - Mark main characters with canBePersona: true
+- For worldInfo entries: include 3-6 keywords per entry (aliases, nicknames, abbreviations, related terms that should trigger the entry in a chatbot lorebook)
+- Write worldInfo descriptions as detailed context an AI would need to roleplay accurately in this setting
 - Return ONLY JSON, no other text`;
-
-  try {
-    console.log('Sending analysis request to OpenRouter...');
-    console.log('Model:', model);
-    console.log('Text length:', textToAnalyze.length, 'characters');
-    console.log('API Key present:', !!apiKey);
-    if (updateProgress && sessionId) {
-      updateProgress(sessionId, `Sending ${textToAnalyze.length.toLocaleString()} characters to AI (${model})...`);
-    }
-    
-    const requestBody = {
-      model: model,
-      messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      stream: false, // Explicitly disable streaming
-      max_tokens: 8000 // Limit response size to prevent huge responses
-    };
-    
-    console.log('Request body prepared, sending to OpenRouter...');
-    console.log('Request URL:', OPENROUTER_API_URL);
-    console.log('Prompt length:', prompt.length);
-    console.log('Total payload size:', JSON.stringify(requestBody).length, 'bytes');
-    console.log('Making axios POST request NOW...');
-    
-    // Add a heartbeat to show the process is alive while waiting
-    const heartbeatInterval = setInterval(() => {
-      console.log('Still waiting for OpenRouter response... (heartbeat)');
-    }, 10000); // Every 10 seconds
-    
-    let response;
-    try {
-      response = await axios.post(
-        OPENROUTER_API_URL,
-        requestBody,
-        {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'http://localhost:3000',
-            'X-Title': 'Chatbot Maker'
-          },
-          timeout: 300000, // 5 minute timeout for large books
-          validateStatus: (status) => {
-            console.log('Received status code:', status);
-            return status >= 200 && status < 300;
-          },
-          onUploadProgress: (progressEvent) => {
-            if (progressEvent.total) {
-              const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-              console.log(`Upload progress: ${percent}%`);
-            }
-          },
-          onDownloadProgress: (progressEvent) => {
-            // Only log every 10KB to reduce spam
-            if (progressEvent.loaded % 10000 < 1000) {
-              console.log(`Download progress: ${(progressEvent.loaded / 1024).toFixed(1)} KB received`);
-            }
-          }
-        }
-      );
-      console.log('Axios call completed');
-      clearInterval(heartbeatInterval);
-    } catch (axiosError) {
-      clearInterval(heartbeatInterval);
-      console.error('Axios request failed with error:', axiosError.message);
-      console.error('Error code:', axiosError.code);
-      console.error('Error config:', axiosError.config?.url);
-      throw axiosError;
-    }
-    
-    console.log('Response received successfully');
-    console.log('Response status:', response.status);
-    console.log('Response headers:', response.headers);
-    console.log('Response data keys:', Object.keys(response.data || {}));
-    console.log('Response data:', JSON.stringify(response.data).substring(0, 500)); // First 500 chars
-
-    console.log('Received response from OpenRouter');
-    
-    // Validate response structure
-    if (!response.data) {
-      console.error('ERROR: No data in response');
-      throw new Error('No data received from AI service');
-    }
-    
-    console.log('Checking for choices array...');
-    if (!response.data.choices || !Array.isArray(response.data.choices) || response.data.choices.length === 0) {
-      console.error('Invalid response structure. Full response:', JSON.stringify(response.data, null, 2));
-      throw new Error('AI response missing choices array');
-    }
-    
-    console.log('Found', response.data.choices.length, 'choices');
-    console.log('First choice structure:', Object.keys(response.data.choices[0]));
-    
-    if (!response.data.choices[0].message || !response.data.choices[0].message.content) {
-      console.error('Invalid message structure. First choice:', JSON.stringify(response.data.choices[0], null, 2));
-      throw new Error('AI response missing message content');
-    }
-    
-    const content = response.data.choices[0].message.content;
-    console.log('Response content length:', content.length);
-    console.log('Content preview:', content.substring(0, 200));
-    if (updateProgress && sessionId) {
-      updateProgress(sessionId, `Received response (${content.length.toLocaleString()} characters), parsing...`);
-    }
-    
-    // Try to parse JSON, with repair attempt if it fails
-    let analysis;
-    try {
-      analysis = JSON.parse(content);
-      console.log('Successfully parsed JSON response');
-    } catch (parseError) {
-      console.error('Initial JSON parse failed:', parseError.message);
-      console.log('Attempting to repair JSON...');
-      
-      // Try to extract just the JSON object if there's extra text
-      let cleanedContent = content.trim();
-      
-      // Remove markdown code blocks if present
-      cleanedContent = cleanedContent.replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
-      
-      // Find the first { and last }
-      const firstBrace = cleanedContent.indexOf('{');
-      const lastBrace = cleanedContent.lastIndexOf('}');
-      
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        cleanedContent = cleanedContent.substring(firstBrace, lastBrace + 1);
-      }
-      
-      // Try to fix common JSON issues
-      // Fix unescaped quotes in strings (basic attempt)
-      cleanedContent = cleanedContent
-        .replace(/([^\\])"([^",:}\]]*)"([^,:}\]]*?):/g, '$1\\"$2\\"$3:') // Fix unescaped quotes in property names
-        .replace(/:\s*"([^"]*)"/g, (match, p1) => {
-          // Fix unescaped quotes in string values
-          const fixed = p1.replace(/(?<!\\)"/g, '\\"');
-          return `: "${fixed}"`;
-        });
-      
-      try {
-        analysis = JSON.parse(cleanedContent);
-        console.log('Successfully parsed JSON after repair');
-      } catch (repairError) {
-        console.error('JSON repair failed:', repairError.message);
-        console.error('Problematic JSON section:', cleanedContent.substring(Math.max(0, parseError.message.match(/position (\d+)/)?.[1] - 100 || 0), Math.min(cleanedContent.length, (parseError.message.match(/position (\d+)/)?.[1] || 0) + 100)));
-        throw new Error(`Failed to parse AI response: ${parseError.message}`);
-      }
-    }
-
-    // Validate the response structure
-    if (!analysis.characters || !Array.isArray(analysis.characters)) {
-      console.error('Invalid response: missing or invalid characters array');
-      throw new Error('AI response missing characters array');
-    }
-
-    if (!analysis.worldInfo) {
-      console.warn('AI response missing worldInfo, using empty structure');
-      analysis.worldInfo = {
-        setting: '',
-        locations: [],
-        factions: [],
-        items: [],
-        concepts: []
-      };
-    }
-
-    if (!analysis.bookTitle) {
-      console.warn('AI response missing bookTitle');
-      analysis.bookTitle = 'Unknown Book';
-    }
-
-    console.log(`Parsed ${analysis.characters.length} characters`);
-    if (updateProgress && sessionId) {
-      updateProgress(sessionId, `Parsed ${analysis.characters.length} characters from AI response`);
-    }
-
-    return analysis;
-  } catch (error) {
-    console.error('AI analysis error:', error.message);
-    if (error.code === 'ECONNABORTED') {
-      throw new Error('AI request timed out. The book may be too large or the AI service is slow. Try a smaller book or try again later.');
-    }
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', JSON.stringify(error.response.data, null, 2));
-      const errorMsg = error.response.data?.error?.message || error.response.data?.error || error.response.statusText;
-      throw new Error(`AI service error: ${errorMsg}`);
-    }
-    if (error.request) {
-      console.error('No response received from AI service');
-      throw new Error('No response from AI service. Check your internet connection and API key.');
-    }
-    throw new Error(`AI analysis failed: ${error.message}`);
-  }
 }

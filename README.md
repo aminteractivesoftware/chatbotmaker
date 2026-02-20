@@ -1,81 +1,132 @@
 # Chatbot Maker
 
-AI-powered tool to generate character cards and lorebooks from book files or summaries.
+AI-powered desktop app to generate SillyTavern character cards and lorebooks from public domain books and text summaries.
 
 ## Features
 
-- 📖 Upload EPUB files or paste book summaries
-- 🤖 AI-powered character extraction using OpenRouter
-- 📝 Generates detailed character cards with personality and dialogue
-- 🌍 Creates detailed lorebooks with world information
-- 💾 Easy JSON export for all characters and lorebook
+- Desktop app — double-click to launch, no terminal needed
+- Upload public domain EPUB files or paste book summaries
+- AI-powered character extraction using any OpenAI-compatible provider
+- Generates detailed character cards with personality, dialogue, and tags
+- Creates lorebooks with world information
+- Exports as JSON and PNG (SillyTavern v2 spec)
+- Chapter-aware chunking for large books
 
-## Setup
+## Download
+
+Download the latest release for your platform from [GitHub Releases](../../releases).
+
+- **macOS:** `Chatbot Maker.dmg`
+- **Windows:** `Chatbot Maker Setup.exe`
+
+## Quick Start
+
+1. Download and install the app for your platform
+2. Launch Chatbot Maker
+3. Enter your API key and provider URL (defaults to OpenRouter)
+4. Upload an EPUB file or paste a book summary
+5. Click "Process" and wait for AI analysis
+6. Download generated character cards and lorebook
+
+> **Note:** Please only process content you have the rights to use, such as public domain works or your own writing.
+
+## Content Sources
+
+Free public domain books in EPUB format:
+
+- [Project Gutenberg](https://www.gutenberg.org/) — 70,000+ free ebooks
+- [Standard Ebooks](https://standardebooks.org/) — high-quality, carefully formatted public domain ebooks
+- [Open Library](https://openlibrary.org/) — borrowable ebooks from the Internet Archive
+- [ManyBooks](https://manybooks.net/) — free ebooks from the public domain
+
+## Development Setup
 
 ### Prerequisites
 
-- Node.js 18+ installed
-- OpenRouter API key (get one at [openrouter.ai](https://openrouter.ai))
+- Node.js 18+
+- An API key for an OpenAI-compatible provider (e.g., [OpenRouter](https://openrouter.ai))
 
-### Clone and Run (Dev)
+### Clone and Install
 
-1. Clone and install:
 ```bash
 git clone <your-repo-url>
 cd chatbot-maker
 npm install
 ```
 
-2. Start both servers:
+### Run in Browser (Dev)
+
 ```bash
 npm run dev
 ```
 
-This will start:
-- Backend API on `http://localhost:3001`
-- Frontend on `http://localhost:3000`
+This starts the backend API on `http://localhost:3001` and the frontend on `http://localhost:3000` with hot-reload.
 
-### Clone and Run (Single Process)
+### Run as Electron App (Dev)
 
-1. Build frontend:
 ```bash
-npm run build
+npm run electron:dev
 ```
 
-2. Start backend (serves API + frontend build):
+This starts both servers and opens the app in an Electron window with DevTools.
+
+### Run as Single Process (Web)
+
 ```bash
+npm run build
 npm start
 ```
 
-3. Open:
-- `http://localhost:3001`
+Opens at `http://localhost:3001` — backend serves both API and the built frontend.
 
-## Usage
+## Building the Desktop App
 
-1. Open `http://localhost:3000` (dev) or `http://localhost:3001` (single process)
-2. Enter your OpenRouter API key
-3. Choose to either:
-   - Upload an EPUB file, OR
-   - Paste a book summary
-4. Click "Process" and wait for AI analysis
-5. Download generated character cards and lorebook
-6. Import into your chatbot application
+### macOS
+
+```bash
+npm run electron:build:mac
+```
+
+Produces `dist-electron/Chatbot Maker.dmg` (universal binary for Intel and Apple Silicon).
+
+### Windows
+
+```bash
+npm run electron:build:win
+```
+
+Produces `dist-electron/Chatbot Maker Setup.exe` (NSIS installer).
+
+### Unpacked Build (Testing)
+
+```bash
+npm run electron:build:dir
+```
+
+Produces an unpacked app in `dist-electron/` for quick testing without creating an installer.
 
 ## Project Structure
 
 ```
 chatbot-maker/
+├── electron/             # Electron main process
+│   └── main.mjs
 ├── backend/              # Express API server
-│   ├── routes/          # API endpoints
-│   ├── services/        # Business logic
-│   │   ├── fileParser.js      # EPUB parsing
-│   │   ├── aiService.js       # OpenRouter integration
-│   │   └── cardGenerator.js   # Character card generation
+│   ├── config/           # Centralized constants
+│   ├── routes/           # API endpoints
+│   ├── services/         # Business logic
+│   │   ├── fileParser.js       # EPUB/MOBI parsing
+│   │   ├── aiService.js        # AI provider integration
+│   │   └── cardGenerator.js    # Character card generation
+│   ├── utils/            # Logger, progress tracking, PNG metadata
 │   └── server.js
-├── frontend/            # React app
+├── frontend/             # React + Vite app
 │   └── src/
 │       ├── components/
+│       ├── hooks/
+│       ├── utils/
 │       └── App.jsx
+├── build/                # Electron app icons
 └── package.json
 ```
 
@@ -84,18 +135,29 @@ chatbot-maker/
 ### POST `/api/process/file`
 Upload and process an EPUB file.
 
-**Body:** FormData with `file` and `apiKey`
+**Body:** FormData with `file`, `apiKey`, `model`, `contextLength`, `apiBaseUrl`
 
 ### POST `/api/process/summary`
 Process a text summary.
 
-**Body:** `{ summary: string, apiKey: string }`
+**Body:** `{ summary, apiKey, model, contextLength, apiBaseUrl }`
+
+### POST `/api/process/test-connection`
+Test an API provider connection.
+
+**Body:** `{ apiBaseUrl, apiKey }`
+
+### GET `/api/process/models`
+Fetch available models from the configured provider.
+
+**Headers:** `x-api-key`, `x-api-base-url`
 
 ## Technologies
 
+- **Desktop:** Electron
 - **Frontend:** React, Vite, Axios
-- **Backend:** Node.js, Express, epub2
-- **AI:** OpenRouter API (Claude 3.5 Sonnet)
+- **Backend:** Node.js, Express, epub2, sharp
+- **AI:** Any OpenAI-compatible API (OpenRouter, Ollama, LM Studio, etc.)
 
 ## License
 

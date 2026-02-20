@@ -18,6 +18,90 @@ header p {
   font-size: 1.2rem;
 }
 
+/* Form layout utilities */
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-light);
+}
+
+.full-width {
+  width: 100%;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.saved-badge {
+  color: var(--primary-orange);
+  font-size: 12px;
+}
+
+.save-btn {
+  padding: 12px 20px;
+  white-space: nowrap;
+  min-width: 120px;
+}
+
+.save-btn.saved {
+  background: #28a745;
+  color: var(--text-light);
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.test-btn {
+  padding: 10px 20px;
+  width: 100%;
+}
+
+.status-message {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.status-message.success {
+  background: rgba(40, 167, 69, 0.15);
+  color: #28a745;
+  border: 1px solid #28a745;
+}
+
+.status-message.error {
+  background: rgba(220, 53, 69, 0.15);
+  color: #dc3545;
+  border: 1px solid #dc3545;
+}
+
+.placeholder-box {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #2C2C2C;
+  background: var(--surface-dark);
+  color: var(--secondary-text);
+  text-align: center;
+}
+
+.context-info {
+  display: block;
+  margin-top: 5px;
+}
+
+/* Mode selector */
 .mode-selector {
   text-align: center;
 }
@@ -25,6 +109,36 @@ header p {
 .mode-selector button.active {
   box-shadow: 0 0 20px rgba(230, 97, 40, 0.4);
   transform: scale(1.02);
+}
+
+.mode-btn-right {
+  margin-left: 10px;
+}
+
+/* Results header bar */
+.results-header {
+  padding: 10px;
+  background: #2C2C2C;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.results-count {
+  color: var(--primary-orange);
+}
+
+.new-upload-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.ready-message {
+  color: var(--secondary-text);
+  text-align: center;
+  margin-top: 20px;
 }
 
 small {

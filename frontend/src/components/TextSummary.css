@@ -1,1 +1,24 @@
-/* Styles are inherited from global CSS, but can be customized here */
+.summary-hint {
+  color: var(--secondary-text);
+  margin-bottom: 15px;
+}
+
+.url-section {
+  margin-top: 20px;
+}
+
+.url-section-label {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--text-light);
+}
+
+.url-input-error {
+  border-color: #dc3545;
+}
+
+.url-error-text {
+  display: block;
+  color: #dc3545;
+  margin-top: 5px;
+}

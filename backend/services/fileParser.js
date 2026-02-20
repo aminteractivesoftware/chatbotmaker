@@ -1,6 +1,7 @@
 import pkg from 'epub2';
 import fs from 'fs/promises';
 import path from 'path';
+import logger from '../utils/logger.js';
 const { EPub } = pkg;
 
 /**
@@ -35,6 +36,7 @@ async function parseMobi(filePath) {
     
     return {
       text: text,
+      chapters: [{ title: '', text: text }], // MOBI: single chapter fallback
       metadata: {
         title: titleMatch ? titleMatch[1] : path.basename(filePath, '.mobi'),
         creator: authorMatch ? authorMatch[1] : 'Unknown Author'
@@ -69,8 +71,8 @@ export async function parseEpub(filePath) {
 
     epub.on('end', async () => {
       try {
-        const chapters = epub.flow.map(chapter => chapter.id);
-        const textPromises = chapters.map(chapterId =>
+        const chapterIds = epub.flow.map(chapter => chapter.id);
+        const textPromises = chapterIds.map(chapterId =>
           new Promise((res, rej) => {
             epub.getChapter(chapterId, (err, text) => {
               if (err) rej(err);
@@ -79,14 +81,24 @@ export async function parseEpub(filePath) {
           })
         );
 
-        const texts = await Promise.all(textPromises);
-        const fullText = texts.join('\n\n');
+        const rawTexts = await Promise.all(textPromises);
 
-        // Remove HTML tags
-        const cleanText = fullText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        // Build individual chapter objects with cleaned text
+        const chapterObjects = rawTexts.map((html, i) => {
+          const cleanText = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+          // Try to get a title from epub.flow metadata
+          const flowItem = epub.flow[i];
+          const title = flowItem?.title || `Chapter ${i + 1}`;
+          return { title, text: cleanText };
+        }).filter(ch => ch.text.length > 0); // Drop empty chapters
+
+        const fullText = chapterObjects.map(ch => ch.text).join('\n\n');
+
+        logger.info(`EPUB parsed: ${chapterObjects.length} chapters, ${fullText.length} chars total`);
 
         resolve({
-          text: cleanText,
+          text: fullText,
+          chapters: chapterObjects,
           metadata: epub.metadata,
           hasCover: !!epub.metadata.cover
         });

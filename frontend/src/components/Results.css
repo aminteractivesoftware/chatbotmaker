@@ -55,6 +55,74 @@
   margin-bottom: 10px;
 }
 
+/* Character card header row */
+.char-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+.role-badge {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--sepia-dark);
+  white-space: nowrap;
+  margin-left: 8px;
+}
+
+.role-badge-persona {
+  background: var(--primary-orange);
+}
+
+.persona-hint {
+  font-size: 12px;
+  color: var(--primary-orange);
+  margin-top: 8px;
+}
+
+.greeting-count {
+  font-size: 12px;
+  color: var(--secondary-text);
+  margin-top: 4px;
+}
+
+/* Tag list on character cards */
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.tag {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #2C2C2C;
+  color: var(--secondary-text);
+}
+
+.tag-overflow {
+  font-size: 11px;
+  padding: 2px 6px;
+  color: var(--secondary-text);
+}
+
+/* Card action buttons (JSON / PNG) */
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.card-action-btn {
+  flex: 1;
+  font-size: 14px;
+  padding: 8px;
+}
+
 .char-preview {
   color: var(--secondary-text);
   font-size: 0.9rem;
@@ -95,6 +163,44 @@
   line-height: 1.6;
 }
 
+/* Expanded tags in detail view */
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.detail-tag {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: #2C2C2C;
+  color: var(--text-light);
+  border: 1px solid #3C3C3C;
+}
+
+/* Description pre-formatted block */
+.description-pre {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+/* Alternate greetings */
+.alternate-label {
+  margin-top: 10px;
+  color: var(--secondary-text);
+  font-size: 14px;
+}
+
+.alternate-greeting {
+  margin-top: 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--sepia-dark);
+}
+
+/* Lorebook entries */
 .lorebook-entries {
   display: flex;
   flex-direction: column;
@@ -106,7 +212,6 @@
   background: var(--bg-dark);
   padding: 15px;
   border-radius: 12px;
-  border-left: 4px solid var(--sepia-dark);
   border: 1px solid #2C2C2C;
   border-left: 4px solid var(--sepia-dark);
 }
@@ -128,6 +233,12 @@
 .lorebook-entry p {
   color: var(--text-light);
   line-height: 1.5;
+}
+
+.more-entries {
+  color: var(--secondary-text);
+  text-align: center;
+  margin-top: 20px;
 }
 
 ol {
